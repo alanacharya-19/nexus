@@ -35,6 +35,14 @@ export interface RunEventPayloads {
   'agent.message': { agentId: string; text: string; stage: RunStage };
   'agent.completed': { agentId: string; summary: string | null; artifactId: string | null };
   'agent.failed': { agentId: string; message: string; code: string };
+  'agent.fallback': {
+    agentId: string;
+    fromProvider: ProviderId;
+    fromModel: string;
+    toProvider: ProviderId;
+    toModel: string;
+    reason: string;
+  };
   'agent.steered': { agentId: string; instruction: string };
   'agent.handoff': { fromAgentId: string; toAgentId: string; reason: string };
   'approval.requested': { stage: RunStage; title: string; summary: string };
