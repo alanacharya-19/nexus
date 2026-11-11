@@ -9,7 +9,7 @@ import { Text } from './text';
 interface PageHeaderProps {
   title: string;
   subtitle?: string;
-  eyebrow?: string;
+  eyebrow?: ReactNode;
   right?: ReactNode;
   back?: boolean;
   large?: boolean;
@@ -22,8 +22,7 @@ export function PageHeader({
   right,
   back = false,
   large = false,
-}: PageHeaderProps) {
-  const insets = useSafeAreaInsets();
+}: PageHeaderProps) {  const insets = useSafeAreaInsets();
   const router = useRouter();
 
   return (
@@ -41,9 +40,13 @@ export function PageHeader({
           ) : null}
           <View style={styles.titles}>
             {eyebrow ? (
-              <Text variant="label" tone="tertiary">
-                {eyebrow}
-              </Text>
+              typeof eyebrow === 'string' ? (
+                <Text variant="label" tone="tertiary">
+                  {eyebrow}
+                </Text>
+              ) : (
+                <View style={styles.eyebrow}>{eyebrow}</View>
+              )
             ) : null}
             <Text variant={large ? 'title' : 'heading'} numberOfLines={1}>
               {title}
@@ -86,6 +89,9 @@ const styles = StyleSheet.create({
   titles: {
     flex: 1,
     gap: 2,
+  },
+  eyebrow: {
+    marginBottom: 2,
   },
   right: {
     flexDirection: 'row',

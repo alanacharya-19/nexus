@@ -1,5 +1,5 @@
-import { forwardRef, type ComponentRef, type ReactNode } from 'react';
-import { Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
+import { forwardRef, type ComponentRef } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -10,8 +10,9 @@ import {
   type TabListProps,
   type TabTriggerSlotProps,
 } from 'expo-router/ui';
-import { colors, layout, radius, shadows, space } from '@/theme';
+import { colors, layout, radius, shadows, space, useAccent } from '@/theme';
 import { Text } from '@/components/ui/text';
+import Animated, { FadeIn } from 'react-native-reanimated';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -23,7 +24,8 @@ interface TabButtonProps extends TabTriggerSlotProps {
 
 const TabButton = forwardRef<ComponentRef<typeof Pressable>, TabButtonProps>(
   function TabButton({ icon, activeIcon, label, isFocused, children: _children, ...props }, ref) {
-    const color = isFocused ? colors.text : colors.textTertiary;
+    const accent = useAccent();
+    const color = isFocused ? accent.accent : colors.textTertiary;
     return (
       <Pressable
         ref={ref}
@@ -34,7 +36,12 @@ const TabButton = forwardRef<ComponentRef<typeof Pressable>, TabButtonProps>(
       >
         <View style={styles.iconWrap}>
           <Ionicons name={isFocused ? activeIcon : icon} size={20} color={color} />
-          {isFocused ? <View style={styles.activeDot} /> : null}
+          {isFocused ? (
+            <Animated.View
+              entering={FadeIn.duration(180)}
+              style={[styles.activeDot, { backgroundColor: accent.accent }]}
+            />
+          ) : null}
         </View>
         <Text
           style={[
@@ -51,15 +58,12 @@ const TabButton = forwardRef<ComponentRef<typeof Pressable>, TabButtonProps>(
   }
 );
 
-function TabBar({ children, ...props }: TabListProps & { children: ReactNode }) {
+function TabBar({ children, style, ...props }: TabListProps) {
   const insets = useSafeAreaInsets();
   return (
     <View
       {...props}
-      style={[
-        styles.barWrapper,
-        { bottom: Math.max(insets.bottom, space.md) },
-      ] as ViewStyle}
+      style={[styles.barWrapper, { bottom: Math.max(insets.bottom, space.md) }, style]}
       pointerEvents="box-none"
     >
       <View style={styles.bar}>{children}</View>
@@ -74,10 +78,10 @@ export default function TabsLayout() {
       <TabList asChild>
         <TabBar>
           <TabTrigger name="index" href="/" asChild>
-            <TabButton icon="pulse-outline" activeIcon="pulse" label="Command" />
+            <TabButton icon="home-outline" activeIcon="home" label="Home" />
           </TabTrigger>
           <TabTrigger name="runs" href="/runs" asChild>
-            <TabButton icon="layers-outline" activeIcon="layers" label="Runs" />
+            <TabButton icon="folder-open-outline" activeIcon="folder-open" label="Projects" />
           </TabTrigger>
           <TabTrigger name="agents" href="/agents" asChild>
             <TabButton icon="people-outline" activeIcon="people" label="Agents" />
@@ -138,7 +142,6 @@ const styles = StyleSheet.create({
     width: 3,
     height: 3,
     borderRadius: 2,
-    backgroundColor: colors.ice,
   },
   label: {
     fontFamily: 'Inter_500Medium',

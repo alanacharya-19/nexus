@@ -7,7 +7,6 @@ import {
   type TextStyle,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
-import { Ionicons } from '@expo/vector-icons';
 import { colors, fonts, radius, space } from '@/theme';
 import { toast } from '@/stores/toast';
 import { IconButton } from './icon-button';

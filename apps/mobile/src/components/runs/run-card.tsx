@@ -1,4 +1,5 @@
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import type { Run } from '@nexus/shared';
 import { RUN_STAGE_LABELS } from '@nexus/shared';
 import { colors, radius, space } from '@/theme';
@@ -9,13 +10,23 @@ import { ProgressBar } from '../ui/progress';
 import { Text } from '../ui/text';
 import { StatusBadge } from './status-badge';
 
-export function RunCard({ run, onPress }: { run: Run; onPress: () => void }) {
+export function RunCard({
+  run,
+  onPress,
+  onOpenArtifact,
+  compact = false,
+}: {
+  run: Run;
+  onPress: () => void;
+  onOpenArtifact?: () => void;
+  compact?: boolean;
+}) {
   const progress = runProgress(run);
   const running = run.status === 'running';
   const activeAgents = run.agents.slice(0, 4);
 
   return (
-    <Card onPress={onPress} style={styles.card}>
+    <Card onPress={onPress} style={[styles.card, compact && styles.cardCompact]}>
       <View style={styles.header}>
         <View style={styles.titleWrap}>
           <View style={styles.metaRow}>
@@ -60,6 +71,23 @@ export function RunCard({ run, onPress }: { run: Run; onPress: () => void }) {
           </Text>
         </View>
         <View style={styles.footerRight}>
+          {run.finalArtifactId && onOpenArtifact ? (
+            <Pressable
+              onPress={(event) => {
+                event.stopPropagation?.();
+                onOpenArtifact();
+              }}
+              hitSlop={6}
+              accessibilityRole="button"
+              accessibilityLabel="Open final deliverable"
+              style={({ pressed }) => [styles.deliverable, pressed && styles.deliverablePressed]}
+            >
+              <Ionicons name="trophy-outline" size={11} color={colors.mint} />
+              <Text variant="caption" tone="mint">
+                Deliverable
+              </Text>
+            </Pressable>
+          ) : null}
           {run.totalCostUsd > 0 ? (
             <Text variant="caption" tone="tertiary">
               {formatCost(run.totalCostUsd)}
@@ -77,6 +105,10 @@ export function RunCard({ run, onPress }: { run: Run; onPress: () => void }) {
 const styles = StyleSheet.create({
   card: {
     gap: space.md,
+  },
+  cardCompact: {
+    gap: space.sm,
+    padding: space.md,
   },
   header: {
     flexDirection: 'row',
@@ -126,6 +158,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.md,
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
+  },
+  deliverable: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: space.sm,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(183,241,113,0.08)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(183,241,113,0.2)',
+  },
+  deliverablePressed: {
+    opacity: 0.7,
   },
 });
 

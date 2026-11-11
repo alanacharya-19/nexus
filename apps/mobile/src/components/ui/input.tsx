@@ -1,4 +1,4 @@
-import { forwardRef, useState } from 'react';
+import { forwardRef, useState, type ComponentProps, type ComponentRef } from 'react';
 import {
   StyleSheet,
   TextInput,
@@ -8,7 +8,6 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import type { ComponentProps } from 'react';
 import { colors, fonts, radius, space } from '@/theme';
 import { Text } from './text';
 
@@ -25,7 +24,7 @@ interface InputProps extends TextInputProps {
   labelAction?: React.ReactNode;
 }
 
-export const Input = forwardRef<TextInput, InputProps>(function Input(
+export const Input = forwardRef<ComponentRef<typeof TextInput>, InputProps>(function Input(
   {
     label,
     hint,

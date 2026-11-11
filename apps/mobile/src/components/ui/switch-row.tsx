@@ -1,5 +1,5 @@
 import { StyleSheet, Switch, View } from 'react-native';
-import { colors, radius, space } from '@/theme';
+import { colors, radius, space, useAccent } from '@/theme';
 import { Text } from './text';
 
 interface SwitchRowProps {
@@ -17,6 +17,7 @@ export function SwitchRow({
   onValueChange,
   disabled,
 }: SwitchRowProps) {
+  const accent = useAccent();
   return (
     <View style={styles.row}>
       <View style={styles.text}>
@@ -31,8 +32,8 @@ export function SwitchRow({
         value={value}
         onValueChange={onValueChange}
         disabled={disabled}
-        trackColor={{ false: colors.surfaceHigh, true: 'rgba(168,199,250,0.35)' }}
-        thumbColor={value ? colors.ice : colors.textTertiary}
+        trackColor={{ false: colors.surfaceHigh, true: accent.border }}
+        thumbColor={value ? accent.accent : colors.textTertiary}
         ios_backgroundColor={colors.surfaceHigh}
       />
     </View>

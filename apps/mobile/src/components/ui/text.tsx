@@ -1,4 +1,4 @@
-import { forwardRef } from 'react';
+import { forwardRef, type ComponentRef } from 'react';
 import {
   Text as RNText,
   type TextProps as RNTextProps,
@@ -41,7 +41,7 @@ interface TextProps extends RNTextProps {
   color?: string;
 }
 
-export const Text = forwardRef<RNText, TextProps>(function Text(
+export const Text = forwardRef<ComponentRef<typeof RNText>, TextProps>(function Text(
   { variant = 'body', tone, align, color, style, ...props },
   ref
 ) {

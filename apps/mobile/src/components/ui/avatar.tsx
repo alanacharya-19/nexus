@@ -1,5 +1,5 @@
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
-import { colors, radius } from '@/theme';
+import { colors } from '@/theme';
 import { initials } from '@/lib/format';
 import { Text } from './text';
 

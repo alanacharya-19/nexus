@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { LiveAgentOutput, RunEvent, StreamMessage } from '@nexus/shared';
 import { api, ApiError, streamUrl } from '@/lib/api';
@@ -52,7 +52,6 @@ export function useRunStream(
 
   // Merge replayed/refetched events without duplicating or reordering.
   useEffect(() => {
-    setEvents((current) => mergeEvents(current, initialEvents));
     if (initialEvents.length > 0) {
       lastSeq.current = Math.max(
         lastSeq.current,
@@ -61,7 +60,6 @@ export function useRunStream(
     }
     if (initialLive && !liveRef.current) {
       liveRef.current = initialLive;
-      setLive(initialLive);
     }
   }, [initialEvents, initialLive]);
 
@@ -298,9 +296,11 @@ export function useRunStream(
     };
 
     xhr.send();
-  }, [enabled, handleEvent, queryClient, runId]);
+  }, [enabled, handleEvent, queryClient, runId, scheduleRetry]);
 
-  connectRef.current = connect;
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   useEffect(() => {
     stoppedRef.current = false;
@@ -314,15 +314,19 @@ export function useRunStream(
       xhrRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runId]);
+  }, [runId, enabled]);
+
+  const mergedEvents = useMemo(
+    () => mergeEvents(events, initialEvents),
+    [events, initialEvents]
+  );
 
   return {
-    events,
-    live,
+    events: mergedEvents,
+    live: live ?? initialLive,
     connected,
     reconnecting,
     error,
-    lastSeq: lastSeq.current,
   };
 }
 

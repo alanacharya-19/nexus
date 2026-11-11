@@ -8,8 +8,9 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
+import Animated, { FadeIn, SlideInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, radius, space } from '@/theme';
+import { colors, radius, space, useReduceMotion } from '@/theme';
 import { IconButton } from './icon-button';
 import { Text } from './text';
 
@@ -33,12 +34,13 @@ export function Sheet({
   scrollable = true,
 }: SheetProps) {
   const insets = useSafeAreaInsets();
+  const reduceMotion = useReduceMotion();
 
   return (
     <Modal
       visible={visible}
       transparent
-      animationType="slide"
+      animationType="fade"
       onRequestClose={onClose}
       statusBarTranslucent
     >
@@ -47,7 +49,14 @@ export function Sheet({
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="Close sheet" />
-        <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, space.lg) }]}>
+        <Animated.View
+          entering={
+            reduceMotion
+              ? FadeIn.duration(180)
+              : SlideInDown.springify().damping(20).stiffness(190)
+          }
+          style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, space.lg) }]}
+        >
           <View style={styles.handle} />
           <View style={styles.header}>
             <View style={styles.headerText}>
@@ -73,7 +82,7 @@ export function Sheet({
             <View style={styles.bodyContent}>{children}</View>
           )}
           {footer ? <View style={styles.footer}>{footer}</View> : null}
-        </View>
+        </Animated.View>
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -85,7 +94,11 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   backdrop: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: colors.overlay,
   },
   sheet: {

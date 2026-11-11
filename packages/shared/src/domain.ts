@@ -163,6 +163,7 @@ export interface Run {
 export interface Artifact {
   id: string;
   runId: string;
+  runTitle?: string | null;
   userId: string;
   name: string;
   kind: ArtifactKind;

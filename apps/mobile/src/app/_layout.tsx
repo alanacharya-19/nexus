@@ -1,7 +1,10 @@
+// eslint-disable-next-line import/no-duplicates
 import 'react-native-gesture-handler';
 
 import { useEffect } from 'react';
 import { Stack } from 'expo-router';
+// The side-effect import above initializes RNGH; this named import is the same module.
+// eslint-disable-next-line import/no-duplicates
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -25,6 +28,7 @@ import {
 import { colors } from '@/theme';
 import { persistOptions, queryClient } from '@/lib/query-client';
 import { useAuthStore, useSettingsStore } from '@/stores/auth';
+import { usePreferencesStore } from '@/stores/preferences';
 import { ToastHost } from '@/components/ui/toast-host';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -47,6 +51,7 @@ export default function RootLayout() {
   useEffect(() => {
     void (async () => {
       await useSettingsStore.getState().hydrate();
+      await usePreferencesStore.getState().hydrate();
       await useAuthStore.getState().hydrate();
     })();
   }, []);

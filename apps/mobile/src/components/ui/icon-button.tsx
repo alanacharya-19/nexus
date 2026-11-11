@@ -2,7 +2,7 @@ import type { ComponentProps } from 'react';
 import { Pressable, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { colors, radius, space } from '@/theme';
+import { colors, radius, space, useHapticsEnabled } from '@/theme';
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
 
@@ -27,6 +27,7 @@ export function IconButton({
   accessibilityLabel,
   style,
 }: IconButtonProps) {
+  const hapticsEnabled = useHapticsEnabled();
   const color =
     tone === 'danger'
       ? colors.danger
@@ -40,7 +41,9 @@ export function IconButton({
     <Pressable
       onPress={() => {
         if (disabled) return;
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+        if (hapticsEnabled) {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+        }
         onPress();
       }}
       disabled={disabled}

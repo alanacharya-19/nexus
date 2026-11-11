@@ -7,12 +7,26 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { colors, radius, space } from '@/theme';
+import {
+  colors,
+  motion,
+  radius,
+  space,
+  useAccent,
+  useHapticsEnabled,
+  useReduceMotion,
+} from '@/theme';
 import { Text } from './text';
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'outline';
 export type ButtonSize = 'sm' | 'md' | 'lg';
@@ -46,43 +60,57 @@ export function Button({
   style,
   accessibilityLabel,
 }: ButtonProps) {
+  const accent = useAccent();
+  const reduceMotion = useReduceMotion();
+  const hapticsEnabled = useHapticsEnabled();
+  const scale = useSharedValue(1);
   const isDisabled = disabled || loading;
   const foreground =
     variant === 'primary'
-      ? colors.inverse
+      ? accent.onAccent
       : variant === 'danger'
         ? colors.danger
         : variant === 'ghost'
           ? colors.textSecondary
           : colors.text;
 
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
   const handlePress = () => {
     if (isDisabled) return;
-    if (haptic) {
+    if (haptic && hapticsEnabled) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     }
     onPress();
   };
 
   return (
-    <Pressable
+    <AnimatedPressable
       onPress={handlePress}
+      onPressIn={() => {
+        if (!reduceMotion) scale.set(withSpring(0.975, motion.spring));
+      }}
+      onPressOut={() => {
+        if (!reduceMotion) scale.set(withSpring(1, motion.spring));
+      }}
       disabled={isDisabled}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={{ disabled: isDisabled, busy: loading }}
-      style={({ pressed }) => [
+      style={[
         styles.base,
         size === 'sm' && styles.sm,
         size === 'lg' && styles.lg,
-        variant === 'primary' && styles.primary,
+        variant === 'primary' && { backgroundColor: accent.accent },
         variant === 'secondary' && styles.secondary,
         variant === 'ghost' && styles.ghost,
         variant === 'danger' && styles.danger,
         variant === 'outline' && styles.outline,
         fullWidth && styles.fullWidth,
-        pressed && !isDisabled && styles.pressed,
         isDisabled && styles.disabled,
+        animatedStyle,
         style,
       ]}
     >
@@ -106,7 +134,7 @@ export function Button({
           ) : null}
         </View>
       )}
-    </Pressable>
+    </AnimatedPressable>
   );
 }
 
@@ -138,9 +166,6 @@ const styles = StyleSheet.create({
   label: {
     letterSpacing: 0.1,
   },
-  primary: {
-    backgroundColor: colors.white,
-  },
   secondary: {
     backgroundColor: colors.surfaceHigh,
     borderWidth: StyleSheet.hairlineWidth,
@@ -161,10 +186,6 @@ const styles = StyleSheet.create({
   },
   fullWidth: {
     alignSelf: 'stretch',
-  },
-  pressed: {
-    opacity: 0.72,
-    transform: [{ scale: 0.995 }],
   },
   disabled: {
     opacity: 0.4,

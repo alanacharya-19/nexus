@@ -1,6 +1,6 @@
 import type { RunStatus } from '@nexus/shared';
 import { RUN_STATUS_LABELS } from '@nexus/shared';
-import { Badge } from './badge';
+import { Badge } from '../ui/badge';
 
 const tone: Record<
   RunStatus,
