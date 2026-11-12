@@ -121,6 +121,42 @@ export const listRunsQuerySchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
+// Conversations and chat
+// ---------------------------------------------------------------------------
+
+export const createConversationSchema = z.object({
+  title: z.string().trim().min(1).max(120).optional(),
+  projectId: idSchema.nullish(),
+  provider: providerSchema.optional(),
+  model: z.string().trim().min(1).max(120).optional(),
+});
+
+export const updateConversationSchema = z.object({
+  title: z.string().trim().min(1).max(120).optional(),
+  projectId: idSchema.nullish(),
+  provider: providerSchema.optional(),
+  model: z.string().trim().min(1).max(120).optional(),
+});
+
+export const listConversationsQuerySchema = z.object({
+  projectId: idSchema.optional(),
+  search: z.string().trim().max(120).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+  cursor: z.string().datetime().optional(),
+});
+
+export const sendMessageSchema = z.object({
+  content: z.string().trim().min(1).max(20_000),
+  provider: providerSchema.optional(),
+  model: z.string().trim().min(1).max(120).optional(),
+});
+
+export const aiPreferencesSchema = z.object({
+  defaultProvider: providerSchema.nullish(),
+  defaultModel: z.string().trim().min(1).max(120).nullish(),
+});
+
+// ---------------------------------------------------------------------------
 // Credentials
 // ---------------------------------------------------------------------------
 

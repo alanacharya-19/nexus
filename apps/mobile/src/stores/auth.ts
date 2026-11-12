@@ -40,7 +40,12 @@ interface AuthState {
   hydrate: () => Promise<void>;
   signInDev: (input: { email: string; name?: string }) => Promise<void>;
   signInSupabase: (input: { email: string; password: string }) => Promise<void>;
-  refresh: () => Promise<boolean>;
+  signUpSupabase: (input: {
+    email: string;
+    password: string;
+    name?: string;
+  }) => Promise<{ needsConfirmation: boolean }>;
+  refresh: (session?: AuthSession | null) => Promise<boolean>;
   signOut: () => Promise<void>;
   setError: (message: string | null) => void;
 }
@@ -124,16 +129,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({ hydrated: true });
         return;
       }
-      const session = JSON.parse(raw) as AuthSession;
+      let session = JSON.parse(raw) as AuthSession;
       if (session.expiresAt && session.expiresAt < Date.now()) {
         if (session.refreshToken && session.mode === 'supabase') {
           configureApi({ token: session.accessToken });
-          const refreshed = await get().refresh();
+          const refreshed = await get().refresh(session);
           if (!refreshed) {
             await persistSession(null);
             set({ session: null, hydrated: true });
             return;
           }
+          // refresh() stores the new session; keep hydrate from restoring the stale one.
+          session = get().session ?? session;
         } else {
           await persistSession(null);
           set({ session: null, hydrated: true });
@@ -144,7 +151,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ session, hydrated: true });
     } catch {
       await persistSession(null);
-      set({ hydrated: true });
+      set({ session: null, hydrated: true });
     }
   },
 
@@ -180,8 +187,34 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  refresh: async () => {
-    const session = get().session;
+  signUpSupabase: async (input) => {
+    set({ busy: true, error: null });
+    try {
+      const payload = await supabaseRequest('signup', {
+        email: input.email,
+        password: input.password,
+        data: input.name ? { name: input.name } : undefined,
+      });
+      // Supabase returns a user without a session when email confirmation is
+      // required. The account exists, but the user must confirm before signing in.
+      if (!payload?.access_token) {
+        set({ busy: false });
+        return { needsConfirmation: true };
+      }
+      const session = toSupabaseSession(payload);
+      await persistSession(session);
+      set({ session, busy: false });
+      return { needsConfirmation: false };
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Could not create the account.';
+      set({ busy: false, error: message });
+      throw error;
+    }
+  },
+
+  refresh: async (candidate) => {
+    const session = candidate === undefined ? get().session : candidate;
     if (!session?.refreshToken) return false;
     try {
       const payload = await supabaseRequest('token?grant_type=refresh_token', {

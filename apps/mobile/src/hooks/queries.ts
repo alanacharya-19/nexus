@@ -65,6 +65,76 @@ export function useRunDetail(id: string) {
   });
 }
 
+export interface ConversationFilters {
+  projectId?: string;
+  search?: string;
+}
+
+export function useConversations(filters: ConversationFilters = {}) {
+  const key = JSON.stringify(filters);
+  return useQuery({
+    queryKey: queryKeys.conversations(key),
+    queryFn: () => api.listConversations({ ...filters, limit: 50 }),
+    placeholderData: (previous) => previous,
+  });
+}
+
+export function useConversation(id: string) {
+  return useQuery({
+    queryKey: queryKeys.conversation(id),
+    queryFn: () => api.getConversation(id),
+    staleTime: 0,
+  });
+}
+
+export function useAiPreferences() {
+  return useQuery({
+    queryKey: queryKeys.aiPreferences,
+    queryFn: () => api.aiPreferences().then((data) => data.preferences),
+    staleTime: 60_000,
+  });
+}
+
+export function useConversationMutations() {
+  const client = useQueryClient();
+  const invalidate = () => {
+    client.invalidateQueries({ queryKey: ['conversations'] });
+  };
+
+  const create = useMutation({
+    mutationFn: api.createConversation,
+    onSuccess: () => invalidate(),
+  });
+  const update = useMutation({
+    mutationFn: ({
+      id,
+      input,
+    }: {
+      id: string;
+      input: Parameters<typeof api.updateConversation>[1];
+    }) => api.updateConversation(id, input),
+    onSuccess: (_data, variables) => {
+      invalidate();
+      client.invalidateQueries({ queryKey: queryKeys.conversation(variables.id) });
+    },
+  });
+  const remove = useMutation({
+    mutationFn: (id: string) => api.deleteConversation(id),
+    onSuccess: () => invalidate(),
+    onError: (error) => toast('Could not delete conversation', error.message, 'error'),
+  });
+  const savePreferences = useMutation({
+    mutationFn: api.saveAiPreferences,
+    onSuccess: (data) => {
+      client.setQueryData(queryKeys.aiPreferences, data.preferences);
+      toast('Default model saved', 'New conversations will use this model.', 'success');
+    },
+    onError: (error) => toast('Could not save model', error.message, 'error'),
+  });
+
+  return { create, update, remove, savePreferences };
+}
+
 export function useArtifacts(limit = 50) {
   return useQuery({
     queryKey: [...queryKeys.artifacts, limit],

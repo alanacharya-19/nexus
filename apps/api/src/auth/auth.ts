@@ -159,6 +159,40 @@ export async function verifyStreamToken(
   }
 }
 
+export async function signConversationStreamToken(
+  userId: string,
+  conversationId: string
+): Promise<string> {
+  return new SignJWT({ conversationId })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setSubject(userId)
+    .setIssuer(LOCAL_ISSUER)
+    .setAudience(STREAM_AUDIENCE)
+    .setIssuedAt()
+    .setExpirationTime('10m')
+    .sign(new TextEncoder().encode(config.devJwtSecret));
+}
+
+export async function verifyConversationStreamToken(
+  token: string,
+  conversationId: string
+): Promise<{ userId: string }> {
+  try {
+    const { payload } = await jwtVerify(
+      token,
+      new TextEncoder().encode(config.devJwtSecret),
+      { issuer: LOCAL_ISSUER, audience: STREAM_AUDIENCE }
+    );
+    if (!payload.sub || payload.conversationId !== conversationId) {
+      throw Errors.unauthorized('Stream token does not match this conversation');
+    }
+    return { userId: payload.sub };
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AppError') throw error;
+    throw Errors.unauthorized('Stream token is invalid or has expired');
+  }
+}
+
 export function extractBearer(header: string | undefined): string | null {
   if (!header) return null;
   const [scheme, value] = header.split(' ');

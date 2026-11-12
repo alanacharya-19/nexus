@@ -1,6 +1,9 @@
 import type {
   Agent,
   Artifact,
+  Conversation,
+  ConversationMessage,
+  MessageMetadata,
   Project,
   Run,
   RunInstruction,
@@ -21,6 +24,9 @@ export function mapUser(row: Row): User {
     id: row.id,
     email: row.email,
     name: row.name ?? null,
+    displayName: row.display_name ?? row.name ?? null,
+    defaultProvider: row.default_provider ?? null,
+    defaultModel: row.default_model ?? null,
     createdAt: iso(row.created_at)!,
   };
 }
@@ -121,6 +127,8 @@ export function mapUsage(row: Row): UsageRecord {
   return {
     id: row.id,
     runId: row.run_id ?? null,
+    conversationId: row.conversation_id ?? null,
+    messageId: row.message_id ?? null,
     agentId: row.agent_id ?? null,
     provider: row.provider,
     model: row.model,
@@ -129,6 +137,37 @@ export function mapUsage(row: Row): UsageRecord {
     costUsd: Number(row.cost_usd),
     latencyMs: Number(row.latency_ms),
     status: row.status,
+    usageSource: row.usage_source ?? 'estimated',
+    costEstimated: row.cost_estimated === undefined ? true : Boolean(row.cost_estimated),
+    createdAt: iso(row.created_at)!,
+  };
+}
+
+export function mapConversation(row: Row): Conversation {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    projectId: row.project_id ?? null,
+    projectName: row.project_name ?? null,
+    title: row.title,
+    provider: row.provider,
+    model: row.model,
+    createdAt: iso(row.created_at)!,
+    updatedAt: iso(row.updated_at)!,
+    messageCount:
+      row.message_count !== undefined ? Number(row.message_count) : undefined,
+    lastMessage: row.last_message ?? null,
+  };
+}
+
+export function mapMessage(row: Row): ConversationMessage {
+  return {
+    id: row.id,
+    conversationId: row.conversation_id,
+    userId: row.user_id,
+    role: row.role,
+    content: row.content ?? '',
+    metadata: (row.metadata ?? { status: 'complete' }) as MessageMetadata,
     createdAt: iso(row.created_at)!,
   };
 }

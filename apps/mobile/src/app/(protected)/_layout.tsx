@@ -19,6 +19,7 @@ export default function ProtectedLayout() {
     >
       <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
       <Stack.Screen name="run/new" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+      <Stack.Screen name="conversation/[id]" />
       <Stack.Screen name="run/[id]" />
       <Stack.Screen name="workspace/[id]" />
       <Stack.Screen name="workflow/[id]" />

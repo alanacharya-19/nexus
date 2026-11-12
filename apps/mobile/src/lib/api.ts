@@ -1,9 +1,13 @@
 import type {
   Agent,
   AgentRole,
+  AiPreferences,
   ApprovalMode,
   Artifact,
   AuthSession,
+  Conversation,
+  ConversationDetail,
+  ConversationMessage,
   CredentialStatus,
   ModelInfo,
   Project,
@@ -61,6 +65,7 @@ interface RequestOptions {
   method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
   body?: unknown;
   token?: string | null;
+  headers?: Record<string, string>;
   signal?: AbortSignal;
   timeoutMs?: number;
   raw?: boolean;
@@ -74,6 +79,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
   const headers: Record<string, string> = {
     accept: 'application/json',
+    ...options.headers,
   };
   const token = options.token === undefined ? authToken : options.token;
   if (token) headers.authorization = `Bearer ${token}`;
@@ -218,8 +224,11 @@ export const api = {
 
   // Projects
   listProjects: () => request<{ projects: Project[] }>('/projects'),
-  createProject: (input: { name: string; description?: string; color?: string }) =>
-    request<{ project: Project }>('/projects', { method: 'POST', body: input }),
+  createProject: (input: {
+    name: string;
+    description?: string | null;
+    color?: string;
+  }) => request<{ project: Project }>('/projects', { method: 'POST', body: input }),
   updateProject: (
     id: string,
     input: Partial<{ name: string; description: string | null; color: string }>
@@ -295,6 +304,95 @@ export const api = {
       method: 'POST',
     }),
 
+  // Conversations
+  listConversations: (
+    query: { projectId?: string; search?: string; limit?: number; cursor?: string } = {}
+  ) => {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== undefined && value !== '') params.set(key, String(value));
+    }
+    const suffix = params.toString() ? `?${params.toString()}` : '';
+    return request<{ conversations: Conversation[]; nextCursor: string | null }>(
+      `/conversations${suffix}`
+    );
+  },
+  createConversation: (input: {
+    title?: string;
+    projectId?: string | null;
+    provider?: ProviderId;
+    model?: string;
+  }) => request<{ conversation: Conversation }>('/conversations', {
+    method: 'POST',
+    body: input,
+  }),
+  getConversation: (id: string) =>
+    request<ConversationDetail>(`/conversations/${id}`),
+  updateConversation: (
+    id: string,
+    input: Partial<{
+      title: string;
+      projectId: string | null;
+      provider: ProviderId;
+      model: string;
+    }>
+  ) => request<{ conversation: Conversation }>(`/conversations/${id}`, {
+    method: 'PATCH',
+    body: input,
+  }),
+  deleteConversation: (id: string) =>
+    request<{ deleted: true }>(`/conversations/${id}`, { method: 'DELETE' }),
+  listMessages: (id: string, limit = 500) =>
+    request<{ messages: ConversationMessage[] }>(
+      `/conversations/${id}/messages?limit=${limit}`
+    ),
+  sendMessage: (
+    id: string,
+    input: {
+      content: string;
+      provider?: ProviderId;
+      model?: string;
+      deviceKey?: string | null;
+    }
+  ) =>
+    request<{
+      userMessage: ConversationMessage;
+      assistantMessage: ConversationMessage;
+      streamToken: string;
+      expiresIn: number;
+    }>(`/conversations/${id}/messages`, {
+      method: 'POST',
+      body: {
+        content: input.content,
+        provider: input.provider,
+        model: input.model,
+      },
+      headers: input.deviceKey ? { 'x-provider-key': input.deviceKey } : undefined,
+      timeoutMs: 60_000,
+    }),
+  cancelMessage: (conversationId: string, messageId: string) =>
+    request<{ cancelled: boolean }>(
+      `/conversations/${conversationId}/messages/${messageId}/cancel`,
+      { method: 'POST' }
+    ),
+  conversationStreamToken: (id: string) =>
+    request<{ token: string; expiresIn: number }>(
+      `/conversations/${id}/stream-token`,
+      { method: 'POST' }
+    ),
+
+  // AI preferences
+  aiPreferences: () =>
+    request<{ preferences: AiPreferences }>('/preferences/ai'),
+  saveAiPreferences: (input: {
+    defaultProvider?: ProviderId | null;
+    defaultModel?: string | null;
+  }) =>
+    request<{ preferences: AiPreferences }>('/preferences/ai', {
+      method: 'PUT',
+      body: input,
+    }),
+
   // Artifacts
   listArtifacts: (limit = 50) =>
     request<{ artifacts: Artifact[] }>(`/artifacts?limit=${limit}`),
@@ -329,4 +427,17 @@ export const api = {
 export function streamUrl(runId: string, token: string, lastEventId: number): string {
   const params = new URLSearchParams({ token, lastEventId: String(lastEventId) });
   return `${baseUrl}/runs/${runId}/stream?${params.toString()}`;
+}
+
+export function conversationStreamUrl(
+  conversationId: string,
+  messageId: string,
+  token: string,
+  lastIndex: number
+): string {
+  const params = new URLSearchParams({
+    token,
+    lastIndex: String(lastIndex),
+  });
+  return `${baseUrl}/conversations/${conversationId}/messages/${messageId}/stream?${params.toString()}`;
 }

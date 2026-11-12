@@ -36,12 +36,145 @@ export type ArtifactKind = (typeof ARTIFACT_KINDS)[number];
 export const STEP_STATUSES = ['pending', 'running', 'done', 'failed'] as const;
 export type StepStatus = (typeof STEP_STATUSES)[number];
 
+export const MESSAGE_ROLES = ['system', 'user', 'assistant'] as const;
+export type MessageRole = (typeof MESSAGE_ROLES)[number];
+
+export const MESSAGE_STATUSES = [
+  'pending',
+  'streaming',
+  'complete',
+  'cancelled',
+  'error',
+] as const;
+export type MessageStatus = (typeof MESSAGE_STATUSES)[number];
+
+/** Where token counts came from. Estimates are never presented as billing data. */
+export const USAGE_SOURCES = ['provider', 'estimated'] as const;
+export type UsageSource = (typeof USAGE_SOURCES)[number];
+
 export interface User {
   id: string;
   email: string;
   name: string | null;
+  displayName?: string | null;
+  defaultProvider?: ProviderId | null;
+  defaultModel?: string | null;
   createdAt: string;
 }
+
+export interface AiPreferences {
+  defaultProvider: ProviderId | null;
+  defaultModel: string | null;
+}
+
+export interface MessageUsage {
+  inputTokens: number;
+  outputTokens: number;
+  source: UsageSource;
+}
+
+export interface MessageError {
+  code: string;
+  message: string;
+  retryable: boolean;
+}
+
+export interface MessageMetadata {
+  status: MessageStatus;
+  provider?: ProviderId;
+  model?: string;
+  usage?: MessageUsage | null;
+  costUsd?: number;
+  costEstimated?: boolean;
+  latencyMs?: number;
+  finishReason?: string | null;
+  error?: MessageError | null;
+  [key: string]: unknown;
+}
+
+export interface Conversation {
+  id: string;
+  userId: string;
+  projectId: string | null;
+  projectName?: string | null;
+  title: string;
+  provider: ProviderId;
+  model: string;
+  createdAt: string;
+  updatedAt: string;
+  messageCount?: number;
+  lastMessage?: string | null;
+}
+
+export interface ConversationMessage {
+  id: string;
+  conversationId: string;
+  userId: string;
+  role: MessageRole;
+  content: string;
+  metadata: MessageMetadata;
+  createdAt: string;
+}
+
+export interface ConversationDetail {
+  conversation: Conversation;
+  messages: ConversationMessage[];
+}
+
+/**
+ * Server-sent frames for a conversation response. `index` is a monotonic
+ * counter so reconnecting clients can request everything after what they saw.
+ */
+export type ChatStreamMessage =
+  | {
+      event: 'stream.ready';
+      data: {
+        conversationId: string;
+        messageId: string;
+        status: MessageStatus;
+        content: string;
+        lastIndex: number;
+      };
+    }
+  | {
+      event: 'message.delta';
+      data: { messageId: string; index: number; delta: string };
+    }
+  | {
+      event: 'message.usage';
+      data: {
+        messageId: string;
+        inputTokens: number;
+        outputTokens: number;
+        source: UsageSource;
+      };
+    }
+  | {
+      event: 'message.status';
+      data: { messageId: string; status: MessageStatus };
+    }
+  | {
+      event: 'message.done';
+      data: {
+        messageId: string;
+        status: MessageStatus;
+        usage: MessageUsage | null;
+        costUsd: number;
+        costEstimated: boolean;
+        latencyMs: number;
+        finishReason: string | null;
+      };
+    }
+  | {
+      event: 'message.error';
+      data: {
+        messageId: string;
+        code: string;
+        message: string;
+        retryable: boolean;
+      };
+    }
+  | { event: 'stream.heartbeat'; data: { at: string } };
 
 export interface Project {
   id: string;
@@ -188,6 +321,8 @@ export interface RunInstruction {
 export interface UsageRecord {
   id: string;
   runId: string | null;
+  conversationId: string | null;
+  messageId: string | null;
   agentId: string | null;
   provider: ProviderId;
   model: string;
@@ -196,6 +331,8 @@ export interface UsageRecord {
   costUsd: number;
   latencyMs: number;
   status: 'success' | 'error';
+  usageSource: UsageSource;
+  costEstimated: boolean;
   createdAt: string;
 }
 

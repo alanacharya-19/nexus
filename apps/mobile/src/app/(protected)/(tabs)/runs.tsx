@@ -3,9 +3,9 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { RunStatus } from '@nexus/shared';
+import type { Project, RunStatus } from '@nexus/shared';
 import { RUN_STATUS_LABELS } from '@nexus/shared';
-import { useProjects, useRuns } from '@/hooks/queries';
+import { useProjectMutations, useProjects, useRuns } from '@/hooks/queries';
 import { usePreferencesStore } from '@/stores/preferences';
 import { colors, space, useAccent } from '@/theme';
 import { ScrollScreen } from '@/components/ui/screen';
@@ -22,8 +22,13 @@ import { ErrorState } from '@/components/ui/error-state';
 import { EmptyState } from '@/components/ui/empty-state';
 import { OfflineBanner } from '@/components/ui/offline-banner';
 import { RunCard } from '@/components/runs/run-card';
+import {
+  ProjectSheet,
+  type ProjectFormValues,
+} from '@/components/projects/project-sheets';
 import { Appear } from '@/components/ui/animated';
 import { plural } from '@/lib/format';
+import { toast } from '@/stores/toast';
 
 type Filter = 'all' | RunStatus;
 
@@ -59,6 +64,78 @@ export default function RunsScreen() {
 
   const projectsQuery = useProjects();
   const projects = useMemo(() => projectsQuery.data ?? [], [projectsQuery.data]);
+
+  const { create: createProject, update: updateProject, remove: removeProject } =
+    useProjectMutations();
+  const [managerOpen, setManagerOpen] = useState(false);
+  const [managerStartsCreating, setManagerStartsCreating] = useState(false);
+
+  const resetProjectMutations = () => {
+    createProject.reset();
+    updateProject.reset();
+    removeProject.reset();
+  };
+
+  const openProjects = (startCreating = false) => {
+    resetProjectMutations();
+    setManagerStartsCreating(startCreating);
+    setManagerOpen(true);
+  };
+
+  const closeProjects = () => {
+    resetProjectMutations();
+    setManagerOpen(false);
+  };
+
+  const createProjectFromForm = async (values: ProjectFormValues) => {
+    createProject.reset();
+    try {
+      const { project } = await createProject.mutateAsync(values);
+      toast('Project created', `${project.name} is ready for new conversations.`, 'success');
+      setProjectId(project.id);
+      return true;
+    } catch {
+      // The mutation error is shown inline in the sheet.
+      return false;
+    }
+  };
+
+  const updateProjectFromForm = async (project: Project, values: ProjectFormValues) => {
+    updateProject.reset();
+    try {
+      await updateProject.mutateAsync({ id: project.id, input: values });
+      toast('Project updated', `${values.name} is up to date.`, 'success');
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const deleteProjectFromForm = async (project: Project) => {
+    removeProject.reset();
+    try {
+      await removeProject.mutateAsync(project.id);
+      if (projectId === project.id) setProjectId(null);
+      toast(
+        'Project deleted',
+        `${project.name} was removed. Its conversations were kept.`,
+        'success'
+      );
+      return true;
+    } catch {
+      // The mutation hook surfaces the failure with a toast.
+      return false;
+    }
+  };
+
+  const projectError =
+    createProject.error instanceof Error
+      ? createProject.error.message
+      : updateProject.error instanceof Error
+        ? updateProject.error.message
+        : removeProject.error instanceof Error
+          ? removeProject.error.message
+          : null;
 
   const runsQuery = useRuns({
     status: filter === 'all' ? undefined : filter,
@@ -99,12 +176,20 @@ export default function RunsScreen() {
             : `${plural(runs.length, 'conversation')}${activeCount > 0 ? ` · ${activeCount} active` : ''}`
         }
         right={
-          <IconButton
-            icon="add"
-            variant="surface"
-            onPress={() => router.push('/run/new')}
-            accessibilityLabel="New task"
-          />
+          <>
+            <IconButton
+              icon="folder-outline"
+              variant="surface"
+              onPress={() => openProjects()}
+              accessibilityLabel="Manage projects"
+            />
+            <IconButton
+              icon="add"
+              variant="surface"
+              onPress={() => router.push('/run/new')}
+              accessibilityLabel="New task"
+            />
+          </>
         }
       />
       <OfflineBanner />
@@ -140,11 +225,11 @@ export default function RunsScreen() {
             />
           </Appear>
 
-          {projects.length > 0 ? (
-            <Appear delay={30}>
-              <View>
-                <View style={styles.filterHeader}>
-                  <Text variant="label">Project</Text>
+          <Appear delay={30}>
+            <View>
+              <View style={styles.filterHeader}>
+                <Text variant="label">Project</Text>
+                <View style={styles.filterActions}>
                   {projectId ? (
                     <Pressable onPress={() => setProjectId(null)} hitSlop={8}>
                       <Text variant="caption" tone="secondary">
@@ -152,33 +237,43 @@ export default function RunsScreen() {
                       </Text>
                     </Pressable>
                   ) : null}
+                  <Pressable onPress={() => openProjects()} hitSlop={8}>
+                    <Text variant="caption" tone="secondary">
+                      Manage
+                    </Text>
+                  </Pressable>
                 </View>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.chipRow}
-                >
-                  <Chip
-                    label="All projects"
-                    icon="layers-outline"
-                    selected={projectId === null}
-                    onPress={() => setProjectId(null)}
-                  />
-                  {projects.map((project) => (
-                    <Chip
-                      key={project.id}
-                      label={project.name}
-                      icon="folder-outline"
-                      selected={projectId === project.id}
-                      onPress={() =>
-                        setProjectId(projectId === project.id ? null : project.id)
-                      }
-                    />
-                  ))}
-                </ScrollView>
               </View>
-            </Appear>
-          ) : null}
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.chipRow}
+              >
+                <Chip
+                  label="All projects"
+                  icon="layers-outline"
+                  selected={projectId === null}
+                  onPress={() => setProjectId(null)}
+                />
+                {projects.map((project) => (
+                  <Chip
+                    key={project.id}
+                    label={project.name}
+                    icon="folder-outline"
+                    selected={projectId === project.id}
+                    onPress={() =>
+                      setProjectId(projectId === project.id ? null : project.id)
+                    }
+                  />
+                ))}
+                <Chip
+                  label="New project"
+                  icon="add-outline"
+                  onPress={() => openProjects(true)}
+                />
+              </ScrollView>
+            </View>
+          </Appear>
 
           <Appear delay={40}>
             <Segmented options={FILTERS} value={filter} onChange={setFilter} scrollable />
@@ -286,6 +381,18 @@ export default function RunsScreen() {
           )}
         </View>
       </ScrollScreen>
+
+      <ProjectSheet
+        visible={managerOpen}
+        createOnOpen={managerStartsCreating}
+        projects={projects}
+        busy={createProject.isPending || updateProject.isPending || removeProject.isPending}
+        error={projectError}
+        onClose={closeProjects}
+        onCreate={createProjectFromForm}
+        onUpdate={updateProjectFromForm}
+        onDelete={deleteProjectFromForm}
+      />
     </View>
   );
 }
@@ -303,6 +410,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: space.sm,
+  },
+  filterActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.lg,
   },
   chipRow: {
     gap: space.sm,

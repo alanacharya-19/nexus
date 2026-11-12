@@ -9,8 +9,10 @@ import { query } from './db/pool.js';
 import { agentRoutes } from './routes/agents.js';
 import { artifactRoutes } from './routes/artifacts.js';
 import { authRoutes } from './routes/auth.js';
+import { conversationRoutes } from './routes/conversations.js';
 import { credentialRoutes } from './routes/credentials.js';
 import { modelRoutes } from './routes/models.js';
+import { preferenceRoutes } from './routes/preferences.js';
 import { projectRoutes } from './routes/projects.js';
 import { runRoutes } from './routes/runs.js';
 import { streamRoutes } from './routes/stream.js';
@@ -25,6 +27,7 @@ export async function buildApp() {
         paths: [
           'req.headers.authorization',
           'req.headers.cookie',
+          'req.headers["x-provider-key"]',
           'req.body.apiKey',
           'req.body.password',
           '*.apiKey',
@@ -48,7 +51,12 @@ export async function buildApp() {
   await app.register(cors, {
     origin: config.corsOrigins.includes('*') ? true : config.corsOrigins,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['content-type', 'authorization', 'last-event-id'],
+    allowedHeaders: [
+      'content-type',
+      'authorization',
+      'last-event-id',
+      'x-provider-key',
+    ],
     exposedHeaders: ['content-disposition'],
     maxAge: 86_400,
   });
@@ -104,6 +112,8 @@ export async function buildApp() {
       await v1.register(projectRoutes);
       await v1.register(templateRoutes);
       await v1.register(runRoutes);
+      await v1.register(conversationRoutes);
+      await v1.register(preferenceRoutes);
       await v1.register(artifactRoutes);
       await v1.register(usageRoutes);
       await v1.register(credentialRoutes);

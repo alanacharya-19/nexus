@@ -80,6 +80,9 @@ export default function TabsLayout() {
           <TabTrigger name="index" href="/" asChild>
             <TabButton icon="home-outline" activeIcon="home" label="Home" />
           </TabTrigger>
+          <TabTrigger name="chat" href="/chat" asChild>
+            <TabButton icon="chatbubbles-outline" activeIcon="chatbubbles" label="Chat" />
+          </TabTrigger>
           <TabTrigger name="runs" href="/runs" asChild>
             <TabButton icon="folder-open-outline" activeIcon="folder-open" label="Projects" />
           </TabTrigger>

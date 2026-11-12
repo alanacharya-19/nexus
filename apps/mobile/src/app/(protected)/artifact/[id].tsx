@@ -1,12 +1,18 @@
 import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
+import * as Sharing from 'expo-sharing';
 import { Ionicons } from '@expo/vector-icons';
 import { useArtifact } from '@/hooks/queries';
 import { api } from '@/lib/api';
+import {
+  ARTIFACT_EXPORT_OPTIONS,
+  prepareArtifactExport,
+  type ArtifactExportFormat,
+} from '@/lib/artifact-export';
 import { shortDate } from '@/lib/format';
 import { colors, radius, space } from '@/theme';
 import { ScrollScreen } from '@/components/ui/screen';
@@ -35,6 +41,8 @@ export default function ArtifactScreen() {
   const artifactQuery = useArtifact(id);
   const artifact = artifactQuery.data;
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exporting, setExporting] = useState<ArtifactExportFormat | null>(null);
 
   const remove = useMutation({
     mutationFn: () => api.deleteArtifact(id),
@@ -82,6 +90,43 @@ export default function ArtifactScreen() {
     toast('Copied', 'The full artifact is on your clipboard.', 'success');
   };
 
+  const share = async (format: ArtifactExportFormat) => {
+    setExporting(format);
+    try {
+      const option = ARTIFACT_EXPORT_OPTIONS.find((item) => item.format === format);
+      const canShare = await Sharing.isAvailableAsync();
+      if (!canShare) {
+        const text = await api.exportArtifact(artifact.id, format);
+        await Clipboard.setStringAsync(text);
+        setExportOpen(false);
+        toast(
+          'Copied instead',
+          'Sharing is not available here, so the export is on your clipboard.',
+          'success'
+        );
+        return;
+      }
+
+      const file = await prepareArtifactExport(artifact, format);
+      setExportOpen(false);
+      // Let the sheet finish dismissing before presenting the native share sheet.
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      await Sharing.shareAsync(file.uri, {
+        mimeType: option?.mimeType,
+        UTI: option?.uti,
+        dialogTitle: `Export ${artifact.name}`,
+      });
+    } catch (error) {
+      toast(
+        'Could not export artifact',
+        error instanceof Error ? error.message : 'Try again.',
+        'error'
+      );
+    } finally {
+      setExporting(null);
+    }
+  };
+
   return (
     <View style={styles.flex}>
       <PageHeader
@@ -123,6 +168,13 @@ export default function ArtifactScreen() {
           </Card>
 
           <View style={styles.actions}>
+            <Button
+              label="Export & share"
+              icon="share-outline"
+              variant="secondary"
+              fullWidth
+              onPress={() => setExportOpen(true)}
+            />
             <Button
               label="Open workspace"
               icon="chatbubbles-outline"
@@ -180,6 +232,61 @@ export default function ArtifactScreen() {
           </Text>
         </View>
       </Sheet>
+
+      <Sheet
+        visible={exportOpen}
+        onClose={() => {
+          if (exporting === null) setExportOpen(false);
+        }}
+        title="Export artifact"
+        subtitle="Pick a format, then send it anywhere."
+        footer={
+          <Button
+            label="Cancel"
+            variant="ghost"
+            fullWidth
+            disabled={exporting !== null}
+            onPress={() => setExportOpen(false)}
+          />
+        }
+      >
+        <View style={styles.exportList}>
+          {ARTIFACT_EXPORT_OPTIONS.map((option) => {
+            const busy = exporting === option.format;
+            const icon =
+              option.format === 'json' ? 'code-slash-outline' : 'document-text-outline';
+            return (
+              <Pressable
+                key={option.format}
+                onPress={() => void share(option.format)}
+                disabled={exporting !== null}
+                accessibilityRole="button"
+                accessibilityLabel={`Export as ${option.label}`}
+                accessibilityState={{ disabled: exporting !== null, busy }}
+                style={({ pressed }) => [
+                  styles.exportRow,
+                  pressed && styles.exportPressed,
+                ]}
+              >
+                <View style={styles.exportIcon}>
+                  <Ionicons name={icon} size={16} color={colors.ice} />
+                </View>
+                <View style={styles.exportText}>
+                  <Text variant="bodyMedium">{option.label}</Text>
+                  <Text variant="caption" tone="tertiary">
+                    {option.description}
+                  </Text>
+                </View>
+                {busy ? (
+                  <ActivityIndicator size="small" color={colors.textSecondary} />
+                ) : (
+                  <Ionicons name="share-outline" size={16} color={colors.textTertiary} />
+                )}
+              </Pressable>
+            );
+          })}
+        </View>
+      </Sheet>
     </View>
   );
 }
@@ -229,5 +336,35 @@ const styles = StyleSheet.create({
     backgroundColor: colors.dangerSurface,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  exportList: {
+    gap: space.sm,
+  },
+  exportRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    padding: space.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.bgElevated,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  exportPressed: {
+    opacity: 0.72,
+  },
+  exportIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: radius.sm,
+    backgroundColor: 'rgba(168,199,250,0.08)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(168,199,250,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  exportText: {
+    flex: 1,
+    gap: 2,
   },
 });

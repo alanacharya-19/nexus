@@ -2,6 +2,7 @@ import { buildApp } from './app.js';
 import { config } from './config.js';
 import { closePool, pool } from './db/pool.js';
 import { engine } from './orchestration/engine.js';
+import { recoverInterruptedMessages } from './repositories/messages.js';
 
 async function main() {
   const app = await buildApp();
@@ -18,6 +19,13 @@ async function main() {
   }
 
   await engine.recover();
+  const interrupted = await recoverInterruptedMessages();
+  if (interrupted > 0) {
+    app.log.warn(
+      { count: interrupted },
+      'Marked interrupted conversation responses as failed'
+    );
+  }
   await app.listen({ port: config.port, host: config.host });
   app.log.info(
     `NEXUS API ready on http://${config.host}:${config.port} (${config.nodeEnv})`

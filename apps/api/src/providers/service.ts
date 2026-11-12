@@ -37,10 +37,21 @@ export function createAdapter(provider: ProviderId, apiKey: string): ProviderAda
   }
 }
 
+/**
+ * Resolve a provider key for an authenticated user.
+ *
+ * `deviceKey` is the personal-key relay path: the mobile app keeps the key in
+ * the OS secure store and sends it for a single authenticated request. It is
+ * never persisted, returned, or logged by the API.
+ */
 export async function getProviderKey(
   userId: string,
-  provider: ProviderId
-): Promise<{ key: string; source: 'user' | 'server' }> {
+  provider: ProviderId,
+  deviceKey?: string | null
+): Promise<{ key: string; source: 'user' | 'server' | 'device' }> {
+  if (deviceKey && deviceKey.trim().length > 0) {
+    return { key: deviceKey.trim(), source: 'device' };
+  }
   const credential = await getCredential(userId, provider);
   if (credential) {
     return { key: decryptSecret(credential.encryptedKey), source: 'user' };
@@ -52,9 +63,10 @@ export async function getProviderKey(
 
 export async function getAdapterForUser(
   userId: string,
-  provider: ProviderId
+  provider: ProviderId,
+  deviceKey?: string | null
 ): Promise<ProviderAdapter> {
-  const { key } = await getProviderKey(userId, provider);
+  const { key } = await getProviderKey(userId, provider, deviceKey);
   return createAdapter(provider, key);
 }
 

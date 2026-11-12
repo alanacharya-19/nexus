@@ -7,14 +7,17 @@ import {
   type ProviderId,
   type UsageBucket,
   type UsageRecord,
+  type UsageSource,
   type UsageSummary,
 } from '@nexus/shared';
 
 export async function recordUsage(input: {
   userId: string;
-  runId: string | null;
-  agentId: string | null;
-  agentName: string | null;
+  runId?: string | null;
+  conversationId?: string | null;
+  messageId?: string | null;
+  agentId?: string | null;
+  agentName?: string | null;
   provider: ProviderId;
   model: string;
   inputTokens: number;
@@ -22,17 +25,24 @@ export async function recordUsage(input: {
   costUsd: number;
   latencyMs: number;
   status: 'success' | 'error';
+  usageSource?: UsageSource;
+  costEstimated?: boolean;
 }): Promise<UsageRecord> {
   const result = await query(
     `INSERT INTO usage_records
-      (id, user_id, run_id, agent_id, agent_name, provider, model, input_tokens, output_tokens, cost_usd, latency_ms, status)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+      (id, user_id, run_id, conversation_id, message_id, agent_id, agent_name,
+       provider, model, input_tokens, output_tokens, cost_usd, latency_ms, status,
+       usage_source, cost_estimated)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+     RETURNING *`,
     [
       randomUUID(),
       input.userId,
-      input.runId,
-      input.agentId,
-      input.agentName,
+      input.runId ?? null,
+      input.conversationId ?? null,
+      input.messageId ?? null,
+      input.agentId ?? null,
+      input.agentName ?? null,
       input.provider,
       input.model,
       Math.max(0, Math.round(input.inputTokens)),
@@ -40,6 +50,8 @@ export async function recordUsage(input: {
       Math.max(0, input.costUsd),
       Math.max(0, Math.round(input.latencyMs)),
       input.status,
+      input.usageSource ?? 'estimated',
+      input.costEstimated ?? true,
     ]
   );
   return mapUsage(result.rows[0]!);

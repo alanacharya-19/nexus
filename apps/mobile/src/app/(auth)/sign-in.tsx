@@ -31,6 +31,7 @@ export default function SignInScreen() {
   const authError = useAuthStore((state) => state.error);
   const signInDev = useAuthStore((state) => state.signInDev);
   const signInSupabase = useAuthStore((state) => state.signInSupabase);
+  const signUpSupabase = useAuthStore((state) => state.signUpSupabase);
   const setError = useAuthStore((state) => state.setError);
 
   const apiUrl = useSettingsStore((state) => state.apiUrl);
@@ -54,10 +55,12 @@ export default function SignInScreen() {
   const [mode, setMode] = useState<Mode | null>(null);
   const activeMode: Mode = mode ?? modes[0] ?? 'local';
 
+  const [authAction, setAuthAction] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
   const [fieldError, setFieldError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [serverOpen, setServerOpen] = useState(false);
   const [serverDraft, setServerDraft] = useState(apiUrl);
   const [serverSaving, setServerSaving] = useState(false);
@@ -66,6 +69,7 @@ export default function SignInScreen() {
 
   const submit = async () => {
     setFieldError(null);
+    setNotice(null);
     setError(null);
     const cleanEmail = email.trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
@@ -73,12 +77,29 @@ export default function SignInScreen() {
       return;
     }
     if (activeMode === 'supabase' && password.length < 6) {
-      setFieldError('Enter your Supabase password.');
+      setFieldError(
+        authAction === 'signup'
+          ? 'Choose a password with at least 6 characters.'
+          : 'Enter your Supabase password.'
+      );
       return;
     }
     try {
       if (activeMode === 'supabase') {
-        await signInSupabase({ email: cleanEmail, password });
+        if (authAction === 'signup') {
+          const result = await signUpSupabase({
+            email: cleanEmail,
+            password,
+            name: name.trim() || undefined,
+          });
+          if (result.needsConfirmation) {
+            setNotice(
+              'Account created. Check your email to confirm it, then sign in.'
+            );
+          }
+        } else {
+          await signInSupabase({ email: cleanEmail, password });
+        }
       } else {
         await signInDev({ email: cleanEmail, name: name.trim() || undefined });
       }
@@ -199,6 +220,7 @@ export default function SignInScreen() {
                       setMode(item);
                       setFieldError(null);
                       setError(null);
+                      setNotice(null);
                     }}
                     style={[styles.mode, active && styles.modeActive]}
                     accessibilityRole="tab"
@@ -206,6 +228,32 @@ export default function SignInScreen() {
                   >
                     <Text variant="caption" tone={active ? 'primary' : 'tertiary'}>
                       {item === 'local' ? 'Local workspace' : 'Supabase account'}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : null}
+
+          {activeMode === 'supabase' ? (
+            <View style={styles.actionRow}>
+              {(['signin', 'signup'] as const).map((action) => {
+                const active = authAction === action;
+                return (
+                  <Pressable
+                    key={action}
+                    onPress={() => {
+                      setAuthAction(action);
+                      setFieldError(null);
+                      setError(null);
+                      setNotice(null);
+                    }}
+                    style={[styles.action, active && styles.actionActive]}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: active }}
+                  >
+                    <Text variant="caption" tone={active ? 'primary' : 'tertiary'}>
+                      {action === 'signin' ? 'Sign in' : 'Create account'}
                     </Text>
                   </Pressable>
                 );
@@ -227,18 +275,38 @@ export default function SignInScreen() {
           />
 
           {activeMode === 'supabase' ? (
-            <Input
-              label="Password"
-              value={password}
-              onChangeText={setPassword}
-              placeholder="Your Supabase password"
-              secureTextEntry
-              autoCapitalize="none"
-              autoComplete="password"
-              leftIcon="lock-closed-outline"
-              returnKeyType="go"
-              onSubmitEditing={submit}
-            />
+            <>
+              {authAction === 'signup' ? (
+                <Input
+                  label="Display name"
+                  value={name}
+                  onChangeText={setName}
+                  placeholder="Optional"
+                  autoCapitalize="words"
+                  leftIcon="person-outline"
+                  returnKeyType="next"
+                />
+              ) : null}
+              <Input
+                label="Password"
+                value={password}
+                onChangeText={setPassword}
+                placeholder={
+                  authAction === 'signup' ? 'At least 6 characters' : 'Your Supabase password'
+                }
+                secureTextEntry
+                autoCapitalize="none"
+                autoComplete={authAction === 'signup' ? 'new-password' : 'password'}
+                leftIcon="lock-closed-outline"
+                returnKeyType="go"
+                onSubmitEditing={submit}
+              />
+              {authAction === 'signup' ? (
+                <Text variant="caption" tone="faint">
+                  Supabase may ask you to confirm your email before the first sign-in.
+                </Text>
+              ) : null}
+            </>
           ) : (
             <Input
               label="Display name"
@@ -262,8 +330,23 @@ export default function SignInScreen() {
             </View>
           ) : null}
 
+          {notice ? (
+            <View style={styles.noticeRow}>
+              <Ionicons name="mail-outline" size={14} color={colors.mint} />
+              <Text variant="caption" tone="mint" style={styles.errorText}>
+                {notice}
+              </Text>
+            </View>
+          ) : null}
+
           <Button
-            label={activeMode === 'supabase' ? 'Sign in' : 'Enter workspace'}
+            label={
+              activeMode === 'supabase'
+                ? authAction === 'signup'
+                  ? 'Create account'
+                  : 'Sign in'
+                : 'Enter workspace'
+            }
             icon="arrow-forward"
             iconPosition="right"
             size="lg"
@@ -478,6 +561,29 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceHigh,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.borderStrong,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    gap: space.sm,
+  },
+  action: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 34,
+    borderRadius: radius.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    backgroundColor: colors.bgElevated,
+  },
+  actionActive: {
+    backgroundColor: colors.surfaceHigh,
+    borderColor: colors.borderStrong,
+  },
+  noticeRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: space.sm,
   },
   errorRow: {
     flexDirection: 'row',

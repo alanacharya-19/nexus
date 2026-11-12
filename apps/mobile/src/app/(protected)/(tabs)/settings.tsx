@@ -1,12 +1,18 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { PROVIDER_META, PROVIDERS, ROLE_META, getModel } from '@nexus/shared';
+import { PROVIDER_META, PROVIDERS, ROLE_META, getModel, modelsByProvider } from '@nexus/shared';
 import type { ProviderId } from '@nexus/shared';
 import { api, getApiBaseUrl } from '@/lib/api';
+import {
+  deleteDeviceProviderKey,
+  getDeviceProviderKey,
+  listDeviceProviderKeys,
+  setDeviceProviderKey,
+} from '@/lib/provider-keys';
 import { APP_VERSION } from '@/lib/config';
 import { formatCost, formatTokens, plural } from '@/lib/format';
 import { useAuthStore, useSettingsStore } from '@/stores/auth';
@@ -14,6 +20,8 @@ import { usePreferencesStore } from '@/stores/preferences';
 import type { NotificationPreferences } from '@/stores/preferences';
 import {
   useAgents,
+  useAiPreferences,
+  useConversationMutations,
   useCredentials,
   useCredentialMutations,
   useUsageSummary,
@@ -32,6 +40,7 @@ import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Chip } from '@/components/ui/chip';
 import { Avatar } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
 import { Sheet } from '@/components/ui/sheet';
@@ -92,6 +101,13 @@ export default function SettingsScreen() {
   const credentialsQuery = useCredentials();
   const agentsQuery = useAgents();
   const usageQuery = useUsageSummary(30);
+  const aiPreferencesQuery = useAiPreferences();
+  const { savePreferences } = useConversationMutations();
+  const deviceKeysQuery = useQuery({
+    queryKey: ['device-keys'],
+    queryFn: listDeviceProviderKeys,
+    staleTime: 15_000,
+  });
   const capabilities = useQuery({
     queryKey: ['capabilities', apiUrl],
     queryFn: api.capabilities,
@@ -105,12 +121,56 @@ export default function SettingsScreen() {
   const [signOutOpen, setSignOutOpen] = useState(false);
   const [cacheOpen, setCacheOpen] = useState(false);
   const [provider, setProvider] = useState<ProviderId | null>(null);
+  const [defaultsOpen, setDefaultsOpen] = useState(false);
+  const [defaultProvider, setDefaultProvider] = useState<ProviderId>('openai');
+  const [defaultModel, setDefaultModel] = useState('');
+  const [deviceProvider, setDeviceProvider] = useState<ProviderId | null>(null);
 
   const credentials = credentialsQuery.data ?? [];
+  const aiPreferences = aiPreferencesQuery.data;
+  const deviceKeys = deviceKeysQuery.data ?? [];
   const user = session?.user;
   const displayName = user?.name ?? user?.email?.split('@')[0] ?? 'NEXUS operator';
   const summary = usageQuery.data;
   const agents = agentsQuery.data ?? [];
+  const defaultModelInfo = aiPreferences?.defaultModel
+    ? getModel(aiPreferences.defaultModel)
+    : undefined;
+  const draftModels = modelsByProvider(defaultProvider);
+
+  const openDefaults = () => {
+    const preferredProvider = aiPreferences?.defaultProvider ?? 'openai';
+    const preferredModel =
+      aiPreferences?.defaultModel &&
+      getModel(aiPreferences.defaultModel)?.provider === preferredProvider
+        ? aiPreferences.defaultModel
+        : modelsByProvider(preferredProvider)[0]?.id ?? '';
+    setDefaultProvider(preferredProvider);
+    setDefaultModel(preferredModel);
+    savePreferences.reset();
+    setDefaultsOpen(true);
+  };
+
+  const chooseDefaultProvider = (next: ProviderId) => {
+    setDefaultProvider(next);
+    setDefaultModel(modelsByProvider(next)[0]?.id ?? '');
+  };
+
+  const submitDefaults = async () => {
+    if (!defaultModel) {
+      toast('Choose a model', 'Select the default model before saving.', 'error');
+      return;
+    }
+    try {
+      await savePreferences.mutateAsync({
+        defaultProvider,
+        defaultModel,
+      });
+      setDefaultsOpen(false);
+    } catch {
+      // The mutation error is rendered inside the sheet.
+    }
+  };
 
   const saveServer = async () => {
     const candidate = serverDraft.trim();
@@ -149,6 +209,8 @@ export default function SettingsScreen() {
           void capabilities.refetch();
           void agentsQuery.refetch();
           void usageQuery.refetch();
+          void aiPreferencesQuery.refetch();
+          void deviceKeysQuery.refetch();
         }}
         bottomPadding={insets.bottom + 110}
       >
@@ -224,7 +286,89 @@ export default function SettingsScreen() {
                 })}
               </Card>
               <Text variant="caption" tone="faint" style={styles.note}>
-                Keys are encrypted on the server. This device only receives a masked hint.
+                Server-managed keys are encrypted at rest. This device only receives a masked
+                hint. To keep a key on this device instead, use Personal keys below.
+              </Text>
+            </View>
+          </Appear>
+
+          <Appear delay={45}>
+            <View>
+              <SectionHeader
+                title="Personal keys"
+                subtitle="Kept in this device's secure store"
+              />
+              <Card padded={false}>
+                {PROVIDERS.map((item, index) => {
+                  const onDevice = deviceKeys.includes(item);
+                  const meta = PROVIDER_META[item];
+                  return (
+                    <ListRow
+                      key={item}
+                      icon="phone-portrait-outline"
+                      iconColor={meta.accent}
+                      title={meta.label}
+                      subtitle={
+                        onDevice
+                          ? 'Stored on this device · relayed per request'
+                          : 'No key on this device'
+                      }
+                      trailing={
+                        <Badge
+                          label={onDevice ? 'On device' : 'Set up'}
+                          tone={onDevice ? 'mint' : 'neutral'}
+                        />
+                      }
+                      onPress={() => setDeviceProvider(item)}
+                      showDivider={index < PROVIDERS.length - 1}
+                    />
+                  );
+                })}
+              </Card>
+              <Text variant="caption" tone="faint" style={styles.note}>
+                Device keys never leave the OS secure store except as a single authenticated
+                request header. They are not saved on the server and never written to logs.
+              </Text>
+            </View>
+          </Appear>
+
+          <Appear delay={60}>
+            <View>
+              <SectionHeader
+                title="AI defaults"
+                subtitle="The model new conversations start with"
+              />
+              <Card padded={false}>
+                <ListRow
+                  icon="git-branch-outline"
+                  title="Default provider"
+                  subtitle={
+                    aiPreferences?.defaultProvider
+                      ? PROVIDER_META[aiPreferences.defaultProvider].label
+                      : 'Automatic'
+                  }
+                  value={
+                    aiPreferences?.defaultProvider
+                      ? PROVIDER_META[aiPreferences.defaultProvider].shortLabel
+                      : 'Auto'
+                  }
+                  onPress={openDefaults}
+                  showDivider
+                />
+                <ListRow
+                  icon="cube-outline"
+                  title="Default model"
+                  subtitle={
+                    defaultModelInfo?.description ??
+                    'Pick any model from the catalog for new threads.'
+                  }
+                  value={defaultModelInfo?.label ?? 'Automatic'}
+                  onPress={openDefaults}
+                />
+              </Card>
+              <Text variant="caption" tone="faint" style={styles.note}>
+                A model selected in a conversation overrides these defaults. Provider-reported
+                usage is labelled separately from estimates.
               </Text>
             </View>
           </Appear>
@@ -568,6 +712,92 @@ export default function SettingsScreen() {
 
       <CredentialSheet provider={provider} onClose={() => setProvider(null)} />
 
+      <Sheet
+        visible={defaultsOpen}
+        onClose={() => setDefaultsOpen(false)}
+        title="AI defaults"
+        subtitle="New conversations start from this provider and model."
+        footer={
+          <>
+            <Button
+              label="Save default"
+              fullWidth
+              loading={savePreferences.isPending}
+              disabled={!defaultModel}
+              onPress={() => void submitDefaults()}
+            />
+            {savePreferences.error instanceof Error ? (
+              <Text variant="caption" tone="danger">
+                {savePreferences.error.message}
+              </Text>
+            ) : null}
+          </>
+        }
+      >
+        <View style={styles.sectionBlock}>
+          <Text variant="label">Provider</Text>
+          <View style={styles.chipWrap}>
+            {PROVIDERS.map((item) => (
+              <Chip
+                key={item}
+                label={PROVIDER_META[item].label}
+                selected={defaultProvider === item}
+                onPress={() => chooseDefaultProvider(item)}
+              />
+            ))}
+          </View>
+        </View>
+
+        <View style={styles.sectionBlock}>
+          <Text variant="label">Model</Text>
+          <Card padded={false}>
+            {draftModels.map((item, index) => {
+              const selected = item.id === defaultModel;
+              return (
+                <Pressable
+                  key={item.id}
+                  onPress={() => setDefaultModel(item.id)}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                  style={({ pressed }) => [
+                    styles.modelRow,
+                    index < draftModels.length - 1 && styles.modelDivider,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <View style={styles.flexText}>
+                    <Text variant="bodyMedium" tone={selected ? 'primary' : 'secondary'}>
+                      {item.label}
+                    </Text>
+                    <Text variant="caption" tone="faint">
+                      {item.description}
+                    </Text>
+                  </View>
+                  <Ionicons
+                    name={selected ? 'checkmark-circle' : 'ellipse-outline'}
+                    size={18}
+                    color={selected ? accent.accent : colors.textFaint}
+                  />
+                </Pressable>
+              );
+            })}
+          </Card>
+        </View>
+
+        <Text variant="caption" tone="faint">
+          The default is stored with your account. A thread-specific selection always wins.
+        </Text>
+      </Sheet>
+
+      {deviceProvider ? (
+        <DeviceKeySheet
+          key={deviceProvider}
+          provider={deviceProvider}
+          onClose={() => setDeviceProvider(null)}
+          onChanged={() => void deviceKeysQuery.refetch()}
+        />
+      ) : null}
+
       <Dialog
         visible={cacheOpen}
         onClose={() => setCacheOpen(false)}
@@ -803,6 +1033,183 @@ function CredentialSheet({
   );
 }
 
+function DeviceKeySheet({
+  provider,
+  onClose,
+  onChanged,
+}: {
+  provider: ProviderId;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const [apiKey, setApiKey] = useState('');
+  const [stored, setStored] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void getDeviceProviderKey(provider).then((value) => {
+      if (active) setStored(Boolean(value));
+    });
+    return () => {
+      active = false;
+    };
+  }, [provider]);
+
+  const meta = PROVIDER_META[provider];
+
+  const close = () => {
+    setApiKey('');
+    setResult(null);
+    setError(null);
+    onClose();
+  };
+
+  const testKey = async () => {
+    if (apiKey.trim().length < 10) {
+      setError('Paste a complete API key first.');
+      return;
+    }
+    setError(null);
+    setBusy(true);
+    try {
+      const response = await api.testCredential(provider, apiKey.trim());
+      setResult({
+        ok: response.ok,
+        message: response.message ?? (response.ok ? 'Key is valid.' : 'Key was rejected.'),
+      });
+    } catch (caught) {
+      setResult({
+        ok: false,
+        message: caught instanceof Error ? caught.message : 'Could not validate the key.',
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveKey = async () => {
+    if (apiKey.trim().length < 10) {
+      setError('Paste a complete API key first.');
+      return;
+    }
+    setError(null);
+    setBusy(true);
+    try {
+      await setDeviceProviderKey(provider, apiKey.trim());
+      setStored(true);
+      onChanged();
+      toast('Device key saved', `${meta.label} now uses this device's secure store.`, 'success');
+      close();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not save the key on this device.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeKey = async () => {
+    setBusy(true);
+    try {
+      await deleteDeviceProviderKey(provider);
+      setStored(false);
+      onChanged();
+      toast('Device key removed', `${meta.label} will use the server key if configured.`, 'success');
+      close();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not remove the key.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Sheet
+      visible
+      onClose={close}
+      title={`${meta.label} on this device`}
+      subtitle="Personal-key mode. The key is stored only in the OS secure store."
+      footer={
+        <>
+          <Button
+            label="Save on this device"
+            fullWidth
+            loading={busy}
+            onPress={() => void saveKey()}
+          />
+          <Button
+            label="Test key"
+            variant="secondary"
+            fullWidth
+            disabled={busy}
+            onPress={() => void testKey()}
+          />
+          {stored ? (
+            <Button
+              label="Remove device key"
+              variant="danger"
+              fullWidth
+              disabled={busy}
+              onPress={() => void removeKey()}
+            />
+          ) : null}
+        </>
+      }
+    >
+      <View style={styles.sheetIntro}>
+        <View style={[styles.providerBadge, { borderColor: `${meta.accent}44` }]}>
+          <View style={[styles.providerDot, { backgroundColor: meta.accent }]} />
+          <Text variant="caption" tone="secondary">
+            {meta.description}
+          </Text>
+        </View>
+        <Badge
+          label={stored ? 'Stored on device' : 'Not stored'}
+          tone={stored ? 'mint' : 'neutral'}
+        />
+      </View>
+      <Input
+        label="API key"
+        value={apiKey}
+        onChangeText={setApiKey}
+        placeholder={stored ? 'Replace the stored key' : 'Paste key'}
+        autoCapitalize="none"
+        autoCorrect={false}
+        secureTextEntry
+        mono
+      />
+      {result ? (
+        <View
+          style={[
+            styles.testResult,
+            {
+              backgroundColor: result.ok ? colors.successSurface : colors.dangerSurface,
+              borderColor: result.ok
+                ? 'rgba(143,227,176,0.24)'
+                : 'rgba(242,122,122,0.24)',
+            },
+          ]}
+        >
+          <Text variant="caption" tone={result.ok ? 'mint' : 'danger'}>
+            {result.message}
+          </Text>
+        </View>
+      ) : null}
+      {error ? (
+        <Text variant="caption" tone="danger">
+          {error}
+        </Text>
+      ) : null}
+      <Text variant="caption" tone="faint">
+        Testing sends the key to your provider through the authenticated NEXUS relay. Saving
+        writes it to this device only — the server never persists or logs it.
+      </Text>
+    </Sheet>
+  );
+}
+
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
@@ -884,6 +1291,26 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: space.md,
     flexWrap: 'wrap',
+  },
+  sectionBlock: {
+    gap: space.sm,
+  },
+  chipWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: space.sm,
+  },
+  modelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    paddingHorizontal: space.lg,
+    paddingVertical: space.md,
+    minHeight: 56,
+  },
+  modelDivider: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
   },
   providerBadge: {
     flexDirection: 'row',
