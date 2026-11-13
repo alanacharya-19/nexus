@@ -13,7 +13,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
 import {
+  AGENT_STATUS_LABELS,
   APPROVAL_MODE_LABELS,
+  EXECUTION_STATE_LABELS,
   RUN_STAGE_LABELS,
 } from '@nexus/shared';
 import type { Artifact, RunEvent, RunStatus } from '@nexus/shared';
@@ -135,6 +137,18 @@ export default function WorkspaceScreen() {
   const canRetry = run.status === 'failed' || run.status === 'cancelled';
   const canSteer = !isTerminal;
   const live = stream.live;
+  const agentStates = Object.values(run.agentStates);
+  const activeState = agentStates.find((state) =>
+    ['activated', 'thinking', 'working'].includes(state.status)
+  );
+  const activeAgent = run.agents.find(
+    (agent) => agent.agentId === (activeState?.agentId ?? run.currentAgentId)
+  );
+  const currentTask =
+    run.currentTask ??
+    activeState?.currentTask ??
+    (live ? `${live.agentName} · ${RUN_STAGE_LABELS[live.stage]}` : null);
+  const finalArtifact = artifacts.find((artifact) => artifact.kind === 'deliverable');
 
   const appendContext = (text: string) => {
     draft.setValue(draft.value ? `${draft.value}\n\n${text}` : text);
@@ -203,6 +217,19 @@ export default function WorkspaceScreen() {
               <View style={styles.statusBar}>
                 <View style={styles.statusLeft}>
                   <StatusBadge status={run.status} />
+                  <Badge
+                    label={EXECUTION_STATE_LABELS[run.executionState]}
+                    tone={
+                      run.executionState === 'failed'
+                        ? 'danger'
+                        : run.executionState === 'completed'
+                          ? 'mint'
+                          : run.executionState === 'awaiting_approval' ||
+                              run.executionState === 'paused'
+                            ? 'amber'
+                            : 'ice'
+                    }
+                  />
                   <Badge label={APPROVAL_MODE_LABELS[run.approvalMode]} tone="neutral" />
                   {!isTerminal ? (
                     <View style={styles.liveBadge}>
@@ -232,6 +259,48 @@ export default function WorkspaceScreen() {
                 <StagePipeline stage={run.stage} status={run.status} />
               </Card>
             </Appear>
+
+            {!isTerminal ? (
+              <Appear delay={60}>
+                <Card tone="flat" style={styles.activeCard}>
+                  <View style={styles.activeHeader}>
+                    <StatusDot
+                      color={stream.connected ? accent.accent : colors.amber}
+                      active={stream.connected}
+                      size={5}
+                    />
+                    <Text variant="label" style={styles.flexText}>
+                      {activeAgent?.name ?? 'Orchestrator'} ·{' '}
+                      {activeState ? AGENT_STATUS_LABELS[activeState.status] : 'Working'}
+                    </Text>
+                    <Badge label={RUN_STAGE_LABELS[run.stage]} tone="ice" />
+                  </View>
+                  <Text variant="caption" tone="secondary">
+                    {currentTask ?? 'Preparing the next stage…'}
+                  </Text>
+                  <View style={styles.agentStatusRow}>
+                    {run.agents.map((agent) => {
+                      const state = run.agentStates[agent.agentId];
+                      return (
+                        <Badge
+                          key={agent.agentId}
+                          label={`${agent.name}: ${state ? AGENT_STATUS_LABELS[state.status] : 'Idle'}`}
+                          tone={
+                            state?.status === 'failed'
+                              ? 'danger'
+                              : state?.status === 'completed'
+                                ? 'mint'
+                                : state?.status === 'working' || state?.status === 'thinking'
+                                  ? 'ice'
+                                  : 'neutral'
+                          }
+                        />
+                      );
+                    })}
+                  </View>
+                </Card>
+              </Appear>
+            ) : null}
 
             <Appear delay={80}>
               <MessageBlock
@@ -280,11 +349,14 @@ export default function WorkspaceScreen() {
                 <MessageBlock
                   author={{ name: 'NEXUS', role: 'Orchestrator', accent: accent.accent }}
                   streaming
-                  badge="Planning"
+                  badge="Status note"
                 >
                   <Text variant="body" tone="secondary">
                     The lineup is being assembled. The planner will return with a structured
                     plan before the first work step begins.
+                  </Text>
+                  <Text variant="caption" tone="faint">
+                    Generated explanation — not an agent event.
                   </Text>
                 </MessageBlock>
               </Appear>
@@ -390,6 +462,39 @@ export default function WorkspaceScreen() {
                       No blocking issues. Ready to deliver.
                     </Text>
                   )}
+                </MessageBlock>
+              </Appear>
+            ) : null}
+
+            {finalArtifact ? (
+              <Appear delay={200}>
+                <MessageBlock
+                  author={{
+                    name:
+                      run.agents.find((agent) => agent.role === 'polisher')?.name ?? 'Polisher',
+                    role: 'Final result',
+                    accent: colors.mint,
+                  }}
+                  badge="Deliverable"
+                  time={relativeTime(finalArtifact.createdAt)}
+                >
+                  <Text variant="bodySemibold" tone="primary">
+                    {finalArtifact.name}
+                  </Text>
+                  <Text variant="caption" tone="secondary">
+                    {finalArtifact.content
+                      .replace(/^#{1,6}\s*/gm, '')
+                      .replace(/\s+/g, ' ')
+                      .slice(0, 600)}
+                  </Text>
+                  <Button
+                    label="Open the final deliverable"
+                    variant="ghost"
+                    size="sm"
+                    icon="arrow-forward"
+                    iconPosition="right"
+                    onPress={() => router.push(`/artifact/${finalArtifact.id}`)}
+                  />
                 </MessageBlock>
               </Appear>
             ) : null}
@@ -785,6 +890,20 @@ const styles = StyleSheet.create({
   pipelineCard: {
     paddingVertical: space.md,
     paddingHorizontal: space.md,
+  },
+  activeCard: {
+    gap: space.sm,
+  },
+  activeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+  },
+  agentStatusRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: space.xs,
+    marginTop: space.xs,
   },
   objective: {
     fontSize: 15,

@@ -11,12 +11,22 @@ const REFRESH_EVENTS = new Set([
   'run.paused',
   'run.resumed',
   'run.retried',
+  'execution.started',
+  'execution.state',
+  'execution.completed',
+  'execution.failed',
   'plan.created',
   'step.updated',
+  'agent.activated',
+  'agent.status',
+  'agent.output',
+  'review.started',
   'review.completed',
+  'revision.requested',
   'artifact.created',
   'approval.requested',
   'approval.resolved',
+  'approval.granted',
   'agent.fallback',
   'run.completed',
   'run.failed',
@@ -152,8 +162,23 @@ export function useRunStream(
           xhrRef.current?.abort();
         }
       }
-      if (event.type === 'run.completed' || event.type === 'run.failed') {
+      if (event.type === 'execution.state') {
+        const payload = event.payload as { status: string };
+        if (TERMINAL_STATUSES.has(payload.status)) {
+          queryClient.invalidateQueries({ queryKey: ['artifacts'] });
+          stoppedRef.current = true;
+          setConnected(false);
+          xhrRef.current?.abort();
+        }
+      }
+      if (
+        event.type === 'run.completed' ||
+        event.type === 'run.failed' ||
+        event.type === 'execution.completed' ||
+        event.type === 'execution.failed'
+      ) {
         queryClient.invalidateQueries({ queryKey: ['runs'] });
+        queryClient.invalidateQueries({ queryKey: ['artifacts'] });
         queryClient.invalidateQueries({ queryKey: ['usage'] });
       }
     },

@@ -5,12 +5,21 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import {
+  AGENT_STATUS_LABELS,
   APPROVAL_MODE_LABELS,
+  EXECUTION_STATE_DESCRIPTIONS,
+  EXECUTION_STATE_LABELS,
   ROLE_META,
   RUN_STAGE_DESCRIPTIONS,
   RUN_STAGE_LABELS,
 } from '@nexus/shared';
-import type { Artifact, RunEvent, RunReview, RunStatus } from '@nexus/shared';
+import type {
+  AgentExecutionState,
+  Artifact,
+  RunEvent,
+  RunReview,
+  RunStatus,
+} from '@nexus/shared';
 import { api } from '@/lib/api';
 import {
   useApproveRun,
@@ -166,6 +175,19 @@ export default function RunDetailScreen() {
   const events = stream.events.length > 0 ? stream.events : (detail?.events ?? []);
   const orderedEvents = [...events].sort((a, b) => b.seq - a.seq);
   const visibleEvents = showAllEvents ? orderedEvents : orderedEvents.slice(0, 12);
+  const agentStates = Object.values(run.agentStates);
+  const activeState = agentStates.find((state) =>
+    ['activated', 'thinking', 'working'].includes(state.status)
+  );
+  const activeAgent = run.agents.find(
+    (agent) => agent.agentId === (activeState?.agentId ?? run.currentAgentId)
+  );
+  const currentTask =
+    run.currentTask ??
+    activeState?.currentTask ??
+    (stream.live ? `${stream.live.agentName} · ${RUN_STAGE_LABELS[stream.live.stage]}` : null);
+  const agentsWithOutputs = agentStates.filter((state) => state.outputs.length > 0);
+  const finalArtifact = detail?.artifacts.find((artifact) => artifact.kind === 'deliverable');
 
   return (
     <View style={styles.flex}>
@@ -211,6 +233,19 @@ export default function RunDetailScreen() {
               <View style={styles.overviewBadges}>
                 <StatusBadge status={run.status} />
                 <Badge
+                  label={EXECUTION_STATE_LABELS[run.executionState]}
+                  tone={
+                    run.executionState === 'failed'
+                      ? 'danger'
+                      : run.executionState === 'completed'
+                        ? 'mint'
+                        : run.executionState === 'awaiting_approval' ||
+                            run.executionState === 'paused'
+                          ? 'amber'
+                          : 'ice'
+                  }
+                />
+                <Badge
                   label={APPROVAL_MODE_LABELS[run.approvalMode]}
                   tone="neutral"
                 />
@@ -238,6 +273,49 @@ export default function RunDetailScreen() {
             <ProgressBar progress={progress} color={STATUS_COLOR[run.status]} />
 
             <StagePipeline stage={run.stage} status={run.status} />
+
+            <View style={styles.activeExecution}>
+              <View style={styles.activeExecutionHeader}>
+                <Ionicons
+                  name={
+                    isTerminal
+                      ? 'checkmark-done-outline'
+                      : run.executionState === 'paused' ||
+                          run.executionState === 'awaiting_approval'
+                        ? 'pause-circle-outline'
+                        : 'pulse-outline'
+                  }
+                  size={16}
+                  color={isTerminal ? colors.mint : colors.ice}
+                />
+                <Text variant="label" style={styles.flexText}>
+                  {EXECUTION_STATE_LABELS[run.executionState]}
+                </Text>
+                {activeState ? (
+                  <Badge
+                    label={AGENT_STATUS_LABELS[activeState.status]}
+                    tone={activeState.status === 'failed' ? 'danger' : 'ice'}
+                    dot
+                  />
+                ) : null}
+              </View>
+              <Text variant="caption" tone="tertiary">
+                {EXECUTION_STATE_DESCRIPTIONS[run.executionState]}
+              </Text>
+              {activeAgent || currentTask ? (
+                <View style={styles.activeAgentRow}>
+                  <Ionicons name="person-circle-outline" size={15} color={colors.textSecondary} />
+                  <View style={styles.flexText}>
+                    <Text variant="bodyMedium" numberOfLines={1}>
+                      {activeAgent?.name ?? 'Orchestrator'}
+                    </Text>
+                    <Text variant="caption" tone="secondary" numberOfLines={2}>
+                      {currentTask ?? `${RUN_STAGE_LABELS[run.stage]} stage`}
+                    </Text>
+                  </View>
+                </View>
+              ) : null}
+            </View>
 
             <View style={styles.statsRow}>
               <MiniStat label="Tokens" value={formatTokens(run.totalTokens)} />
@@ -283,6 +361,40 @@ export default function RunDetailScreen() {
               onApprove={() => approve.mutate({ decision: 'approve' })}
               onReject={() => setRejectOpen(true)}
             />
+          ) : null}
+
+          {finalArtifact ? (
+            <View>
+              <SectionHeader
+                title="Final result"
+                subtitle={
+                  run.executionState === 'completed'
+                    ? 'Approved and ready to share.'
+                    : 'Polished deliverable in progress.'
+                }
+                action={<Badge label="Deliverable" tone="mint" />}
+              />
+              <Card
+                onPress={() => router.push(`/artifact/${finalArtifact.id}`)}
+                accessibilityLabel={finalArtifact.name}
+                style={styles.finalCard}
+              >
+                <View style={styles.finalHeader}>
+                  <Ionicons name="trophy-outline" size={18} color={colors.mint} />
+                  <Text variant="bodySemibold" style={styles.flexText} numberOfLines={2}>
+                    {finalArtifact.name}
+                  </Text>
+                  <Ionicons name="chevron-forward" size={14} color={colors.textFaint} />
+                </View>
+                <Text variant="caption" tone="secondary" numberOfLines={4}>
+                  {artifactPreview(finalArtifact.content)}
+                </Text>
+                <Text variant="monoSmall" tone="faint">
+                  {finalArtifact.agentName ?? 'Polisher'} · v{finalArtifact.version} ·{' '}
+                  {relativeTime(finalArtifact.createdAt)}
+                </Text>
+              </Card>
+            </View>
           ) : null}
 
           {run.status === 'failed' ? (
@@ -418,6 +530,20 @@ export default function RunDetailScreen() {
                   </>
                 ) : null}
               </Card>
+            </View>
+          ) : null}
+
+          {agentsWithOutputs.length > 0 ? (
+            <View>
+              <SectionHeader
+                title="Agent outputs"
+                subtitle="Actual artifacts and summaries reported by each agent."
+              />
+              <View style={styles.agentOutputList}>
+                {agentsWithOutputs.map((state) => (
+                  <AgentOutputCard key={state.agentId} state={state} />
+                ))}
+              </View>
             </View>
           ) : null}
 
@@ -890,6 +1016,49 @@ function ArtifactRow({
   );
 }
 
+function AgentOutputCard({ state }: { state: AgentExecutionState }) {
+  const outputs = state.outputs.slice(-3).reverse();
+  return (
+    <Card style={styles.agentOutputCard}>
+      <View style={styles.agentOutputHeader}>
+        <View style={styles.flexText}>
+          <Text variant="bodyMedium" numberOfLines={1}>
+            {state.name}
+          </Text>
+          <Text variant="caption" tone="tertiary">
+            {ROLE_META[state.role].label} · {AGENT_STATUS_LABELS[state.status]}
+          </Text>
+        </View>
+        <Badge
+          label={`${state.outputs.length} output${state.outputs.length === 1 ? '' : 's'}`}
+          tone="neutral"
+        />
+      </View>
+      {outputs.map((output) => (
+        <View key={`${output.createdAt}:${output.name}`} style={styles.agentOutputBody}>
+          <View style={styles.agentOutputTitle}>
+            <Ionicons name="document-text-outline" size={12} color={colors.ice} />
+            <Text variant="caption" tone="secondary" style={styles.flexText} numberOfLines={1}>
+              {output.name}
+            </Text>
+            <Text variant="monoSmall" tone="faint">
+              {relativeTime(output.createdAt)}
+            </Text>
+          </View>
+          <Text variant="caption" tone="tertiary" numberOfLines={3}>
+            {output.summary}
+          </Text>
+        </View>
+      ))}
+      {state.error ? (
+        <Text variant="caption" tone="danger">
+          {state.error}
+        </Text>
+      ) : null}
+    </Card>
+  );
+}
+
 function TimelineRow({ event, showDivider }: { event: RunEvent; showDivider: boolean }) {
   const described = describeEvent(event);
   const color = EVENT_COLOR[described.tone];
@@ -915,6 +1084,14 @@ function TimelineRow({ event, showDivider }: { event: RunEvent; showDivider: boo
       </View>
     </View>
   );
+}
+
+function artifactPreview(content: string): string {
+  return content
+    .replace(/^#{1,6}\s*/gm, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 600);
 }
 
 function truncateTail(text: string, max: number): string {
@@ -952,6 +1129,56 @@ const styles = StyleSheet.create({
   statsRow: {
     flexDirection: 'row',
     gap: space.sm,
+  },
+  activeExecution: {
+    gap: space.xs,
+    padding: space.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.bgElevated,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  activeExecutionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+  },
+  activeAgentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    marginTop: space.xs,
+  },
+  finalCard: {
+    gap: space.sm,
+    borderColor: 'rgba(183,241,113,0.26)',
+  },
+  finalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+  },
+  agentOutputList: {
+    gap: space.sm,
+  },
+  agentOutputCard: {
+    gap: space.sm,
+  },
+  agentOutputHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+  },
+  agentOutputBody: {
+    gap: 2,
+    paddingTop: space.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  agentOutputTitle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.xs,
   },
   miniStat: {
     flex: 1,

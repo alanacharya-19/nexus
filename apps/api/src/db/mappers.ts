@@ -1,16 +1,54 @@
 import type {
   Agent,
+  AgentExecutionState,
   Artifact,
   Conversation,
   ConversationMessage,
+  ExecutionState,
   MessageMetadata,
   Project,
   Run,
   RunInstruction,
+  RunStage,
+  RunStatus,
   UsageRecord,
   User,
   WorkflowTemplate,
 } from '@nexus/shared';
+
+function inferExecutionState(
+  status: RunStatus | undefined,
+  stage: RunStage | undefined
+): ExecutionState {
+  switch (status) {
+    case 'completed':
+      return 'completed';
+    case 'failed':
+      return 'failed';
+    case 'cancelled':
+      return 'cancelled';
+    case 'paused':
+      return 'paused';
+    case 'awaiting_approval':
+      return 'awaiting_approval';
+    case 'queued':
+      return 'queued';
+    default:
+      break;
+  }
+  switch (stage) {
+    case 'plan':
+      return 'planning';
+    case 'review':
+      return 'reviewing';
+    case 'revise':
+      return 'revising';
+    case 'polish':
+      return 'polishing';
+    default:
+      return 'executing';
+  }
+}
 
 export type Row = Record<string, any>;
 
@@ -74,6 +112,9 @@ export function mapRun(row: Row): Run {
     templateId: row.template_id ?? null,
     status: row.status,
     stage: row.stage,
+    executionState:
+      (row.execution_state as ExecutionState | undefined) ??
+      inferExecutionState(row.status as RunStatus, row.stage as RunStage),
     approvalMode: row.approval_mode,
     agents: row.agents ?? [],
     plan: row.plan ?? null,
@@ -82,6 +123,13 @@ export function mapRun(row: Row): Run {
     currentStep: Number(row.current_step ?? 0),
     reviewRound: Number(row.review_round ?? 0),
     revisionCount: Number(row.revision_count ?? 0),
+    maxReviewRounds: Number(row.max_review_rounds ?? 3),
+    maxDurationMs: Number(row.max_duration_ms ?? 1_800_000),
+    maxTotalTokens: Number(row.max_total_tokens ?? 500_000),
+    maxCostUsd: Number(row.max_cost_usd ?? 3),
+    currentAgentId: row.current_agent_id ?? null,
+    currentTask: row.current_task ?? null,
+    agentStates: (row.agent_states ?? {}) as Record<string, AgentExecutionState>,
     error: row.error ?? null,
     errorCode: row.error_code ?? null,
     totalTokens: Number(row.total_tokens ?? 0),
@@ -90,6 +138,7 @@ export function mapRun(row: Row): Run {
     createdAt: iso(row.created_at)!,
     updatedAt: iso(row.updated_at)!,
     startedAt: iso(row.started_at),
+    executionStartedAt: iso(row.execution_started_at),
     completedAt: iso(row.completed_at),
     isLive: false,
   };

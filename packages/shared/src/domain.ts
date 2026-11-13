@@ -27,6 +27,36 @@ export type RunStatus = (typeof RUN_STATUSES)[number];
 export const RUN_STAGES = ['plan', 'work', 'review', 'revise', 'polish', 'deliver'] as const;
 export type RunStage = (typeof RUN_STAGES)[number];
 
+/**
+ * Explicit, persisted orchestration states. `RunStatus` remains the
+ * user-facing lifecycle status (for backwards compatibility) while
+ * `ExecutionState` describes exactly what the multi-agent engine is doing.
+ */
+export const EXECUTION_STATES = [
+  'queued',
+  'planning',
+  'executing',
+  'reviewing',
+  'revising',
+  'polishing',
+  'awaiting_approval',
+  'paused',
+  'completed',
+  'failed',
+  'cancelled',
+] as const;
+export type ExecutionState = (typeof EXECUTION_STATES)[number];
+
+export const AGENT_EXECUTION_STATUSES = [
+  'idle',
+  'activated',
+  'thinking',
+  'working',
+  'completed',
+  'failed',
+] as const;
+export type AgentExecutionStatus = (typeof AGENT_EXECUTION_STATUSES)[number];
+
 export const APPROVAL_MODES = ['always', 'key', 'auto'] as const;
 export type ApprovalMode = (typeof APPROVAL_MODES)[number];
 
@@ -226,6 +256,14 @@ export interface PlanStep {
   dependsOn: number[];
   status: StepStatus;
   outputArtifactId?: string | null;
+  /** How the engine (and reviewer) will judge this subtask as complete. */
+  acceptanceCriteria?: string[];
+  /** Resolved from the run's frozen agent roster when the plan is created. */
+  assignedAgentId?: string | null;
+  /** Bounded work attempts. Used to prevent accidental re-execution. */
+  attempts?: number;
+  /** Reviewer guidance applied on the most recent revision. */
+  reviewFeedback?: string[];
 }
 
 export interface RunPlan {
@@ -233,7 +271,37 @@ export interface RunPlan {
   approach: string;
   steps: PlanStep[];
   risks: string[];
+  /** Requirements and constraints extracted by the planner. */
+  requirements?: string[];
+  constraints?: string[];
+  /** Named deliverables the pipeline promises to produce. */
+  deliverables?: string[];
   createdAt: string;
+}
+
+/** Per-agent, independently persisted execution status and output history. */
+export interface AgentExecutionOutput {
+  artifactId: string | null;
+  name: string;
+  kind: ArtifactKind;
+  summary: string;
+  createdAt: string;
+}
+
+export interface AgentExecutionState {
+  agentId: string;
+  name: string;
+  role: AgentRole;
+  status: AgentExecutionStatus;
+  currentTask: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  lastOutput: string | null;
+  outputs: AgentExecutionOutput[];
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+  error: string | null;
 }
 
 export type ReviewSeverity = 'low' | 'medium' | 'high' | 'critical';
@@ -254,6 +322,9 @@ export interface RunReview {
   requiredChanges: string[];
   round: number;
   createdAt: string;
+  contradictions?: string[];
+  missingRequirements?: string[];
+  reviewedArtifactIds?: string[];
 }
 
 export interface PendingApproval {
@@ -273,6 +344,8 @@ export interface Run {
   templateId: string | null;
   status: RunStatus;
   stage: RunStage;
+  /** Explicit engine state. Persisted independently of the legacy status. */
+  executionState: ExecutionState;
   approvalMode: ApprovalMode;
   agents: RunAgent[];
   plan: RunPlan | null;
@@ -281,6 +354,13 @@ export interface Run {
   currentStep: number;
   reviewRound: number;
   revisionCount: number;
+  maxReviewRounds: number;
+  maxDurationMs: number;
+  maxTotalTokens: number;
+  maxCostUsd: number;
+  currentAgentId: string | null;
+  currentTask: string | null;
+  agentStates: Record<string, AgentExecutionState>;
   error: string | null;
   errorCode: string | null;
   totalTokens: number;
@@ -289,6 +369,7 @@ export interface Run {
   createdAt: string;
   updatedAt: string;
   startedAt: string | null;
+  executionStartedAt: string | null;
   completedAt: string | null;
   isLive?: boolean;
 }
@@ -375,6 +456,7 @@ export interface LiveAgentOutput {
   stage: RunStage;
   text: string;
   startedAt: string;
+  status?: AgentExecutionStatus;
 }
 
 export interface RunDetail {
@@ -418,6 +500,116 @@ export interface AgentDefaults {
   name: string;
   systemPrompt: string;
   accent: string;
+}
+
+// ---------------------------------------------------------------------------
+// Structured agent-to-agent communication
+// ---------------------------------------------------------------------------
+
+export type AgentRequestKind = 'plan' | 'execute' | 'review' | 'revise' | 'polish';
+
+/** Validated envelope passed to one agent for one unit of work. */
+export interface AgentRequest {
+  id: string;
+  runId: string;
+  agentId: string;
+  role: AgentRole;
+  kind: AgentRequestKind;
+  objective: string;
+  task: string;
+  constraints: string[];
+  contextSummary: string;
+  expectedOutput: string;
+  createdAt: string;
+}
+
+export interface AgentResponseUsage {
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+}
+
+/** Validated envelope returned by an agent after a provider call. */
+export interface AgentResponse {
+  requestId: string;
+  runId: string;
+  agentId: string;
+  role: AgentRole;
+  status: 'completed' | 'partial' | 'failed';
+  output: string;
+  structured: Record<string, unknown> | null;
+  incomplete: string[];
+  usage: AgentResponseUsage;
+  provider: ProviderId;
+  model: string;
+  error: string | null;
+  startedAt: string;
+  completedAt: string;
+}
+
+/** Zod-validated plan produced by the Planner agent. */
+export interface ExecutionPlan {
+  summary: string;
+  approach: string;
+  requirements: string[];
+  constraints: string[];
+  deliverables: string[];
+  steps: PlanStep[];
+  risks: string[];
+  createdAt: string;
+}
+
+/** One assigned unit of work, including its acceptance criteria. */
+export interface Subtask {
+  id: string;
+  title: string;
+  description: string;
+  assigneeRole: AgentRole;
+  assignedAgentId: string | null;
+  expectedOutput: string;
+  acceptanceCriteria: string[];
+  dependsOn: number[];
+  status: StepStatus;
+  attempts: number;
+  outputArtifactId: string | null;
+}
+
+/** Reviewer's structured verdict over actual worker artifacts. */
+export interface ReviewReport extends RunReview {
+  approved: boolean;
+  reviewedArtifactIds: string[];
+  contradictions: string[];
+  missingRequirements: string[];
+}
+
+/** Validated instruction handed from Reviewer to Worker. */
+export interface RevisionInstruction {
+  id: string;
+  runId: string;
+  round: number;
+  reviewId: string;
+  requiredChanges: string[];
+  issues: ReviewIssue[];
+  sourceArtifactIds: string[];
+  createdAt: string;
+}
+
+/** Validated final document produced by the Polisher. */
+export interface FinalDeliverable {
+  title: string;
+  content: string;
+  summary: string;
+  sources: string[];
+  reviewScore: number | null;
+  unresolvedIssues: string[];
+  createdAt: string;
+}
+
+export interface ExecutionLimits {
+  maxReviewRounds: number;
+  maxDurationMs: number;
+  maxTotalTokens: number;
+  maxCostUsd: number;
 }
 
 export interface AuthSession {

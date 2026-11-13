@@ -1,5 +1,7 @@
 import type {
+  AgentExecutionStatus,
   ArtifactKind,
+  ExecutionState,
   LiveAgentOutput,
   PlanStep,
   ProviderId,
@@ -18,6 +20,29 @@ import type {
 export interface RunEventPayloads {
   'run.created': { title: string; stage: RunStage };
   'run.started': { resumed: boolean };
+  'execution.started': {
+    state: ExecutionState;
+    objective: string;
+    pipeline: string[];
+  };
+  'execution.state': {
+    state: ExecutionState;
+    previous: ExecutionState;
+    stage: RunStage;
+    status: RunStatus;
+  };
+  'execution.completed': {
+    state: ExecutionState;
+    finalArtifactId: string | null;
+    durationMs: number;
+    totalTokens: number;
+    totalCostUsd: number;
+  };
+  'execution.failed': {
+    state: ExecutionState;
+    message: string;
+    code: string;
+  };
   'run.stage': { stage: RunStage; previous: RunStage };
   'run.status': { status: RunStatus };
   'plan.created': { plan: RunPlan };
@@ -31,8 +56,32 @@ export interface RunEventPayloads {
     provider: ProviderId;
     stage: RunStage;
   };
+  'agent.activated': {
+    agentId: string;
+    agentName: string;
+    role: string;
+    task: string;
+    stage: RunStage;
+    round?: number;
+  };
+  'agent.status': {
+    agentId: string;
+    agentName: string;
+    status: AgentExecutionStatus;
+    detail: string | null;
+    stage: RunStage;
+  };
   'agent.token': { agentId: string; delta: string };
   'agent.message': { agentId: string; text: string; stage: RunStage };
+  'agent.output': {
+    agentId: string;
+    agentName: string;
+    role: string;
+    stage: RunStage;
+    summary: string;
+    artifactId: string | null;
+    structured: boolean;
+  };
   'agent.completed': { agentId: string; summary: string | null; artifactId: string | null };
   'agent.failed': { agentId: string; message: string; code: string };
   'agent.fallback': {
@@ -51,7 +100,20 @@ export interface RunEventPayloads {
     decision: 'approved' | 'rejected';
     note: string | null;
   };
+  'approval.granted': { stage: RunStage; title: string; note: string | null };
+  'review.started': {
+    agentId: string;
+    agentName: string;
+    round: number;
+    artifactCount: number;
+  };
   'review.completed': { review: RunReview };
+  'revision.requested': {
+    agentId: string;
+    round: number;
+    instructions: string[];
+    review: RunReview;
+  };
   'artifact.created': {
     artifactId: string;
     name: string;

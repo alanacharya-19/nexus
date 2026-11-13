@@ -51,6 +51,10 @@ export const runRoutes: FastifyPluginAsync = async (app) => {
       templateId: input.templateId ?? null,
       approvalMode: input.approvalMode,
       agents,
+      maxReviewRounds: input.maxReviewRounds,
+      maxDurationMs: input.maxDurationMs,
+      maxTotalTokens: input.maxTotalTokens,
+      maxCostUsd: input.maxCostUsd,
     });
 
     await emitRunEvent(run.id, 'run.created', {

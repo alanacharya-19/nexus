@@ -46,6 +46,17 @@ const envSchema = z.object({
   PROVIDER_TIMEOUT_MS: z.coerce.number().int().min(10_000).max(600_000).default(120_000),
   PROVIDER_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
 
+  // Orchestration guardrails. Per-run overrides are validated at the API edge.
+  MAX_REVIEW_ROUNDS: z.coerce.number().int().min(1).max(10).default(3),
+  MAX_EXECUTION_DURATION_MS: z.coerce
+    .number()
+    .int()
+    .min(60_000)
+    .max(86_400_000)
+    .default(1_800_000),
+  MAX_EXECUTION_TOKENS: z.coerce.number().int().min(1_000).max(10_000_000).default(500_000),
+  MAX_EXECUTION_COST_USD: z.coerce.number().min(0).max(1_000).default(3),
+
   CORS_ORIGINS: z.string().default('*'),
 });
 
@@ -104,6 +115,10 @@ export const config = {
   maxConcurrentRuns: env.MAX_CONCURRENT_RUNS,
   providerTimeoutMs: env.PROVIDER_TIMEOUT_MS,
   providerMaxRetries: env.PROVIDER_MAX_RETRIES,
+  maxReviewRounds: env.MAX_REVIEW_ROUNDS,
+  maxExecutionDurationMs: env.MAX_EXECUTION_DURATION_MS,
+  maxExecutionTokens: env.MAX_EXECUTION_TOKENS,
+  maxExecutionCostUsd: env.MAX_EXECUTION_COST_USD,
   corsOrigins: env.CORS_ORIGINS.split(',').map((origin) => origin.trim()).filter(Boolean),
   version: '1.0.0',
 } as const;

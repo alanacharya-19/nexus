@@ -1,4 +1,10 @@
-import type { ApprovalMode, RunStage, RunStatus } from './domain.js';
+import type {
+  AgentExecutionStatus,
+  ApprovalMode,
+  ExecutionState,
+  RunStage,
+  RunStatus,
+} from './domain.js';
 
 export const RUN_STAGE_LABELS: Record<RunStage, string> = {
   plan: 'Plan',
@@ -26,6 +32,43 @@ export const RUN_STATUS_LABELS: Record<RunStatus, string> = {
   completed: 'Completed',
   failed: 'Failed',
   cancelled: 'Cancelled',
+};
+
+export const EXECUTION_STATE_LABELS: Record<ExecutionState, string> = {
+  queued: 'Queued',
+  planning: 'Planning',
+  executing: 'Executing',
+  reviewing: 'Reviewing',
+  revising: 'Revising',
+  polishing: 'Polishing',
+  awaiting_approval: 'Awaiting approval',
+  paused: 'Paused',
+  completed: 'Completed',
+  failed: 'Failed',
+  cancelled: 'Cancelled',
+};
+
+export const EXECUTION_STATE_DESCRIPTIONS: Record<ExecutionState, string> = {
+  queued: 'Waiting for an execution slot.',
+  planning: 'Planner is decomposing the objective into assigned subtasks.',
+  executing: 'Worker is producing the requested deliverables.',
+  reviewing: 'Reviewer is auditing the actual worker output.',
+  revising: 'Worker is applying the reviewer’s required changes.',
+  polishing: 'Polisher is preparing the final deliverable.',
+  awaiting_approval: 'Execution is paused until a human decision is recorded.',
+  paused: 'Execution is paused and can resume from its last checkpoint.',
+  completed: 'The final deliverable was produced and the run is complete.',
+  failed: 'Execution stopped after an unrecoverable error.',
+  cancelled: 'Execution was cancelled. Existing outputs are preserved.',
+};
+
+export const AGENT_STATUS_LABELS: Record<AgentExecutionStatus, string> = {
+  idle: 'Idle',
+  activated: 'Activated',
+  thinking: 'Thinking',
+  working: 'Working',
+  completed: 'Completed',
+  failed: 'Failed',
 };
 
 export const APPROVAL_MODE_LABELS: Record<ApprovalMode, string> = {

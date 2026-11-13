@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { query, withTransaction } from '../db/pool.js';
 import { iso, mapInstruction, mapRun } from '../db/mappers.js';
 import type {
+  AgentExecutionState,
   ApprovalMode,
+  ExecutionState,
   Run,
   RunAgent,
   RunEvent,
@@ -21,6 +23,7 @@ export interface RunPatch {
   projectId?: string | null;
   status?: RunStatus;
   stage?: RunStage;
+  executionState?: ExecutionState;
   agents?: RunAgent[];
   plan?: RunPlan | null;
   review?: RunReview | null;
@@ -28,10 +31,18 @@ export interface RunPatch {
   currentStep?: number;
   reviewRound?: number;
   revisionCount?: number;
+  maxReviewRounds?: number;
+  maxDurationMs?: number;
+  maxTotalTokens?: number;
+  maxCostUsd?: number;
+  currentAgentId?: string | null;
+  currentTask?: string | null;
+  agentStates?: Record<string, AgentExecutionState>;
   error?: string | null;
   errorCode?: string | null;
   finalArtifactId?: string | null;
   startedAt?: string | null;
+  executionStartedAt?: string | null;
   completedAt?: string | null;
 }
 
@@ -40,6 +51,7 @@ const RUN_COLUMNS: Record<keyof RunPatch, string> = {
   projectId: 'project_id',
   status: 'status',
   stage: 'stage',
+  executionState: 'execution_state',
   agents: 'agents',
   plan: 'plan',
   review: 'review',
@@ -47,10 +59,18 @@ const RUN_COLUMNS: Record<keyof RunPatch, string> = {
   currentStep: 'current_step',
   reviewRound: 'review_round',
   revisionCount: 'revision_count',
+  maxReviewRounds: 'max_review_rounds',
+  maxDurationMs: 'max_duration_ms',
+  maxTotalTokens: 'max_total_tokens',
+  maxCostUsd: 'max_cost_usd',
+  currentAgentId: 'current_agent_id',
+  currentTask: 'current_task',
+  agentStates: 'agent_states',
   error: 'error',
   errorCode: 'error_code',
   finalArtifactId: 'final_artifact_id',
   startedAt: 'started_at',
+  executionStartedAt: 'execution_started_at',
   completedAt: 'completed_at',
 };
 
@@ -59,6 +79,7 @@ const JSON_COLUMNS = new Set<keyof RunPatch>([
   'plan',
   'review',
   'pendingApproval',
+  'agentStates',
 ]);
 
 export async function createRun(input: {
@@ -69,11 +90,17 @@ export async function createRun(input: {
   templateId: string | null;
   approvalMode: ApprovalMode;
   agents: RunAgent[];
+  maxReviewRounds?: number;
+  maxDurationMs?: number;
+  maxTotalTokens?: number;
+  maxCostUsd?: number;
 }): Promise<Run> {
   const result = await query(
     `INSERT INTO runs
-      (id, user_id, title, objective, project_id, template_id, approval_mode, agents, status, stage)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'queued','plan')
+      (id, user_id, title, objective, project_id, template_id, approval_mode, agents,
+       status, stage, execution_state, max_review_rounds, max_duration_ms,
+       max_total_tokens, max_cost_usd)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'queued','plan','queued',$9,$10,$11,$12)
      RETURNING *`,
     [
       randomUUID(),
@@ -84,6 +111,10 @@ export async function createRun(input: {
       input.templateId,
       input.approvalMode,
       JSON.stringify(input.agents),
+      input.maxReviewRounds ?? 3,
+      input.maxDurationMs ?? 1_800_000,
+      input.maxTotalTokens ?? 500_000,
+      input.maxCostUsd ?? 3,
     ]
   );
   return mapRun(result.rows[0]!);
@@ -192,15 +223,22 @@ export async function incrementRunTotals(
   runId: string,
   tokens: number,
   costUsd: number
-): Promise<void> {
-  await query(
+): Promise<{ totalTokens: number; totalCostUsd: number } | null> {
+  const result = await query<{ total_tokens: string; total_cost_usd: string }>(
     `UPDATE runs
      SET total_tokens = total_tokens + $2,
          total_cost_usd = total_cost_usd + $3,
          updated_at = now()
-     WHERE id = $1`,
+     WHERE id = $1
+     RETURNING total_tokens, total_cost_usd`,
     [runId, Math.max(0, Math.round(tokens)), Math.max(0, costUsd)]
   );
+  const row = result.rows[0];
+  if (!row) return null;
+  return {
+    totalTokens: Number(row.total_tokens),
+    totalCostUsd: Number(row.total_cost_usd),
+  };
 }
 
 export async function deleteRun(userId: string, runId: string): Promise<boolean> {
@@ -215,9 +253,29 @@ export async function appendEvent<K extends RunEventType>(
   runId: string,
   type: K,
   payload: RunEventPayloads[K],
-  agentId: string | null = null
+  agentId: string | null = null,
+  eventKey: string | null = null
 ): Promise<RunEvent> {
   return withTransaction(async (client) => {
+    if (eventKey) {
+      const existing = await client.query(
+        'SELECT * FROM run_events WHERE run_id = $1 AND event_key = $2',
+        [runId, eventKey]
+      );
+      const row = existing.rows[0];
+      if (row) {
+        return {
+          id: Number(row.id),
+          runId: row.run_id,
+          seq: Number(row.seq),
+          type: row.type,
+          agentId: row.agent_id ?? null,
+          payload: row.payload,
+          createdAt: iso(row.created_at)!,
+        } as RunEvent;
+      }
+    }
+
     const seqResult = await client.query<{ last_seq: number }>(
       'UPDATE runs SET last_seq = last_seq + 1 WHERE id = $1 RETURNING last_seq',
       [runId]
@@ -226,9 +284,9 @@ export async function appendEvent<K extends RunEventType>(
     if (seq === undefined) throw new Error(`Run ${runId} not found while appending event`);
 
     const result = await client.query(
-      `INSERT INTO run_events (run_id, seq, type, agent_id, payload)
-       VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-      [runId, seq, type, agentId, JSON.stringify(payload)]
+      `INSERT INTO run_events (run_id, seq, type, agent_id, payload, event_key)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+      [runId, seq, type, agentId, JSON.stringify(payload), eventKey]
     );
     const row = result.rows[0]!;
     return {
@@ -314,6 +372,7 @@ export async function recoverInterruptedRuns(): Promise<Run[]> {
   const result = await query(
     `UPDATE runs
      SET status = 'paused',
+         execution_state = 'paused',
          error = 'The server restarted while this run was executing. Resume to continue from the last checkpoint.',
          error_code = 'SERVER_RESTART',
          updated_at = now()

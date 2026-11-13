@@ -3,8 +3,10 @@ import {
   approvalDecisionSchema,
   createRunSchema,
   estimateCost,
+  finalDeliverableSchema,
   getModel,
   plannerOutputSchema,
+  polisherOutputSchema,
   reviewOutputSchema,
   stageRequiresApproval,
 } from '@nexus/shared';
@@ -78,8 +80,41 @@ describe('plannerOutputSchema', () => {
   });
 });
 
-describe('reviewOutputSchema', () => {
-  it('accepts a valid review and defaults issue lists', () => {
+describe('polisherOutputSchema', () => {
+  const deliverable = {
+    title: 'Mobile Gaming Startup — Business Plan',
+    content: 'A detailed plan. '.repeat(10),
+    summary: 'A seed-stage plan for a mid-core mobile studio.',
+    sources: ['Market analysis'],
+    unresolvedIssues: [],
+  };
+
+  it('validates only the fields the model owns', () => {
+    const parsed = polisherOutputSchema.parse(deliverable);
+    expect(parsed.sources).toEqual(['Market analysis']);
+    expect(parsed).not.toHaveProperty('createdAt');
+    expect(parsed).not.toHaveProperty('reviewScore');
+  });
+
+  it('rejects content that is too short', () => {
+    expect(
+      polisherOutputSchema.safeParse({ ...deliverable, content: 'Too short' }).success
+    ).toBe(false);
+  });
+
+  it('requires server-owned provenance fields on the persisted deliverable', () => {
+    expect(finalDeliverableSchema.safeParse(deliverable).success).toBe(false);
+    expect(
+      finalDeliverableSchema.safeParse({
+        ...deliverable,
+        reviewScore: 91,
+        createdAt: new Date().toISOString(),
+      }).success
+    ).toBe(true);
+  });
+});
+
+describe('reviewOutputSchema', () => {  it('accepts a valid review and defaults issue lists', () => {
     const parsed = reviewOutputSchema.parse({
       verdict: 'approve',
       score: 88,
