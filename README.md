@@ -119,8 +119,15 @@ npm run db:migrate  # Apply SQL migrations
 npm run typecheck   # shared + api + mobile
 npm test            # API unit tests
 npm run lint        # mobile + api ESLint
+npm run doctor      # Expo config and dependency health
+npm run build:api   # Compile the API to apps/api/dist
+npm run build:web   # Static web export to apps/mobile/dist
+npm run check       # typecheck + lint + tests + Expo Doctor
 npm run build:shared
 ```
+
+`npm run check` is the same gate CI runs on every push and pull request
+(`.github/workflows/ci.yml`); it must pass before shipping.
 
 ## API surface
 

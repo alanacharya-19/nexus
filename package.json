@@ -20,6 +20,10 @@
     "typecheck": "npm run build:shared && npm run typecheck -w @nexus/shared && npm run typecheck -w @nexus/api && npm run typecheck -w @nexus/mobile",
     "test": "npm run test -w @nexus/api",
     "lint": "npm run lint -w @nexus/mobile && npm run lint -w @nexus/api",
+    "doctor": "npm run doctor -w @nexus/mobile",
+    "build:api": "npm run build:shared && npm run build -w @nexus/api",
+    "build:web": "npm run build:shared && npm run build:web -w @nexus/mobile",
+    "check": "npm run typecheck && npm run lint && npm test && npm run doctor",
     "db:migrate": "npm run migrate -w @nexus/api"
   },
   "allowScripts": {

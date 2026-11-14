@@ -8,7 +8,6 @@
     "scheme": "nexus",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#08090B",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.nexus.workspace",
@@ -41,7 +40,9 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
-      ]
+      ],
+      "expo-sharing",
+      "expo-status-bar"
     ],
     "experiments": {
       "typedRoutes": true,

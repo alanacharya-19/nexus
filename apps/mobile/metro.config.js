@@ -13,6 +13,13 @@ config.resolver.nodeModulesPaths = [
   path.resolve(projectRoot, 'node_modules'),
   path.resolve(workspaceRoot, 'node_modules'),
 ];
-config.resolver.disableHierarchicalLookup = true;
+// Keep hierarchical lookup enabled so nested dependencies (for example the
+// `semver` copy bundled inside react-native-reanimated) resolve correctly in
+// the npm workspace layout.
+
+// expo-sqlite ships its web database engine as a .wasm asset.
+if (!config.resolver.assetExts.includes('wasm')) {
+  config.resolver.assetExts.push('wasm');
+}
 
 module.exports = config;
