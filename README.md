@@ -76,7 +76,9 @@ npm start          # then press i / a / w, or scan the QR code
 ```
 
 The API listens on `http://localhost:4000`. The mobile app auto-detects the API host from
-Expo's `hostUri`; set `EXPO_PUBLIC_API_URL` in `apps/mobile/.env` to override it.
+Expo's `hostUri`; set `EXPO_PUBLIC_API_URL` in `apps/mobile/.env` to override it. The
+override must include the `/v1` path, for example `http://192.168.1.20:4000/v1`. See
+`apps/mobile/.env.example`.
 
 ### Environment
 
@@ -122,7 +124,7 @@ npm run lint        # mobile + api ESLint
 npm run doctor      # Expo config and dependency health
 npm run build:api   # Compile the API to apps/api/dist
 npm run build:web   # Static web export to apps/mobile/dist
-npm run check       # typecheck + lint + tests + Expo Doctor
+npm run check       # CI gate: typecheck + lint + tests + doctor + API/web builds
 npm run build:shared
 ```
 
@@ -220,7 +222,8 @@ queries. Mobile and API typechecks must both pass before shipping.
 
 - **`PostgreSQL is not reachable`** — run `docker compose up -d`, then `npm run db:migrate`.
 - **App cannot reach the API** — set `EXPO_PUBLIC_API_URL` to your machine's LAN address
-  (for example `http://192.168.1.20:4000`) when testing on a physical device.
+  including the `/v1` path (for example `http://192.168.1.20:4000/v1`) when testing on a
+  physical device. A missing `/v1` makes every request return 404.
 - **No models available** — add a provider key in `.env` or in **Settings → Provider credentials**.
 - **Run never leaves the plan stage** — check the API logs; a missing or invalid provider
   key surfaces as an `agent.failed` event in the run timeline.

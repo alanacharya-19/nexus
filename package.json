@@ -23,7 +23,7 @@
     "doctor": "npm run doctor -w @nexus/mobile",
     "build:api": "npm run build:shared && npm run build -w @nexus/api",
     "build:web": "npm run build:shared && npm run build:web -w @nexus/mobile",
-    "check": "npm run typecheck && npm run lint && npm test && npm run doctor",
+    "check": "npm run typecheck && npm run lint && npm test && npm run doctor && npm run build:api && npm run build:web",
     "db:migrate": "npm run migrate -w @nexus/api"
   },
   "allowScripts": {
